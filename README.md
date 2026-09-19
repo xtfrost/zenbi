@@ -8,6 +8,9 @@ A custom [Home Assistant](https://www.home-assistant.io/) integration for the Da
 
 This integration brings school schedules, homework tasks, weekly letters ("ugebreve"), and annual planning directly into Home Assistant calendars and dashboards.
 
+> [!WARNING]
+> **Disclaimer**: This integration is an independent open-source project and is **not affiliated with, endorsed by, or officially associated with Zenbi or Zenbi ApS**. It communicates with Zenbi using reverse-engineered web client endpoints. Because these are unofficial internal APIs, they may change, break, or be updated at any time without notice.
+
 ---
 
 ## Features

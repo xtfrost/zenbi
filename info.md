@@ -4,6 +4,9 @@ Connect Home Assistant to the Danish school communication platform **Zenbi** ([a
 
 This integration brings daily class schedules, homework tasks, weekly teacher letters ("ugeplaner"), and annual school planning directly into your Home Assistant dashboards and automations.
 
+> [!WARNING]
+> **Disclaimer**: This integration is an independent community project and is **not affiliated with or endorsed by Zenbi or Zenbi ApS**. It relies on reverse-engineered web application endpoints which may change or break at any time without notice.
+
 ---
 
 ## Multi-Student Architecture
