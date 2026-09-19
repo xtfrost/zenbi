@@ -480,5 +480,57 @@ def test_danish_and_list_quill_delta_parsing():
     assert "- Gummistøvler" in parsed_bullets
 
 
+@pytest.mark.asyncio
+async def test_client_close_and_session_ownership():
+    """Test client.close() behavior for owned vs external session."""
+    # 1. External session -> should not be closed by client.close()
+    mock_session = MagicMock(spec=aiohttp.ClientSession)
+    mock_session.closed = False
+    mock_session.close = AsyncMock()
+    client_ext = ZenbiApiClient("user", "pass", session=mock_session)
+    assert client_ext._owns_session is False
+    await client_ext.close()
+    mock_session.close.assert_not_called()
+
+    # 2. Owned session -> closed by client.close()
+    client_owned = ZenbiApiClient("user", "pass", session=None)
+    assert client_owned._owns_session is True
+    # Force session creation
+    session = client_owned._get_session()
+    assert session is not None
+    await client_owned.close()
+    assert session.closed is True
 
 
+@pytest.mark.asyncio
+async def test_client_get_notifications_placeholder():
+    """Test get_notifications placeholder method."""
+    client = ZenbiApiClient("user", "pass")
+    notifs = await client.get_notifications()
+    assert notifs == []
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_client_authenticate_missing_token():
+    """Test authenticate raises ZenbiAuthError when response lacks a token."""
+    mock_session = MagicMock(spec=aiohttp.ClientSession)
+    mock_session.closed = False
+    mock_resp = AsyncMock()
+    mock_resp.status = 200
+    mock_resp.json = AsyncMock(return_value={"userId": "123", "token": ""})
+    mock_session.post.return_value.__aenter__.return_value = mock_resp
+
+    client = ZenbiApiClient("user", "pass", session=mock_session)
+    with pytest.raises(ZenbiAuthError, match="did not contain an authentication token"):
+        await client.authenticate()
+
+
+def test_calculate_rolling_window_naive_datetime():
+    """Test calculate_rolling_window with a timezone-naive datetime."""
+    naive_dt = datetime(2026, 9, 23, 14, 30)  # Wednesday
+    start, end = calculate_rolling_window(naive_dt)
+    assert start.tzinfo is not None
+    assert start.weekday() == 0  # Monday
+    assert start.hour == 0
+    assert (end - start).days == 14

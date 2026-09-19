@@ -536,3 +536,64 @@ async def test_coordinator_concurrent_partial_failure(mock_hass, mock_config_ent
     assert data.planning_labels == []
 
 
+@pytest.mark.asyncio
+async def test_coordinator_on_demand_weekly_schedules(mock_hass, mock_config_entry, mock_client):
+    """Test coordinator on-demand query for weekly schedules outside cached window."""
+    coordinator = ZenbiCalendarDataUpdateCoordinator(mock_hass, mock_client, mock_config_entry)
+    coordinator.data = ZenbiCalendarData(
+        weekly_schedules=[],
+        window_start=datetime(2026, 9, 21, 0, 0, tzinfo=timezone.utc),
+        window_end=datetime(2026, 10, 4, 0, 0, tzinfo=timezone.utc),
+    )
+
+    out_start = datetime(2026, 11, 1, 0, 0, tzinfo=timezone.utc)
+    out_end = datetime(2026, 11, 8, 0, 0, tzinfo=timezone.utc)
+    expected_ws = [ZenbiWeeklySchedule(id="ws-out", start="", end="", description="", raw_description="", title="Future WS")]
+    mock_client.get_weekly_schedules.return_value = expected_ws
+
+    result = await coordinator.async_get_weekly_schedules(out_start, out_end)
+    assert len(result) == 1
+    assert result[0].id == "ws-out"
+    mock_client.get_weekly_schedules.assert_called_once_with(out_start, out_end)
+
+
+@pytest.mark.asyncio
+async def test_calendar_entity_malformed_items_handling(mock_hass, mock_config_entry, mock_client):
+    """Test calendar entities gracefully return None when encountering unparseable items."""
+    coordinator = ZenbiCalendarDataUpdateCoordinator(mock_hass, mock_client, mock_config_entry)
+
+    sched_ent = ZenbiScheduleCalendarEntity(coordinator, mock_config_entry)
+    plan_ent = ZenbiPlanningCalendarEntity(coordinator, mock_config_entry)
+    wm_ent = ZenbiWeeklyMessagesCalendarEntity(coordinator, mock_config_entry)
+
+    # Malformed schedule item (invalid start/end datetime)
+    bad_item = ZenbiCalendarItem(id="bad-1", title="Broken", start="not-a-datetime", end="not-a-datetime")
+    assert sched_ent._item_to_calendar_event(bad_item) is None
+
+    # Malformed planning label (no valid dates)
+    bad_label = ZenbiPlanningLabel(id="bad-2", title="Broken Label", start_date="")
+    assert plan_ent._label_to_calendar_event(bad_label) is None
+
+    # Malformed weekly schedule (no start date)
+    bad_ws = ZenbiWeeklySchedule(id="bad-3", start="", end="", description="", raw_description="", title="Broken WS")
+    assert wm_ent._schedule_to_calendar_event(bad_ws) is None
+
+
+@pytest.mark.asyncio
+async def test_config_flow_reauth_cannot_connect(mock_hass, mock_config_entry):
+    """Test reauth flow handles connection error gracefully."""
+    flow = ZenbiConfigFlow()
+    flow.hass = mock_hass
+    flow.context = {"entry_id": mock_config_entry.entry_id, "title": mock_config_entry.title}
+    flow._reauth_entry = mock_config_entry
+
+    with patch("custom_components.zenbi.config_flow.ZenbiApiClient") as mock_client_cls:
+        instance = mock_client_cls.return_value
+        instance.authenticate = AsyncMock(side_effect=ZenbiConnectionError("Server unreachable"))
+
+        res = await flow.async_step_reauth_confirm({CONF_PASSWORD: "any_password"})
+        assert res["type"] == "form"
+        assert res["errors"]["base"] == "cannot_connect"
+
+
+

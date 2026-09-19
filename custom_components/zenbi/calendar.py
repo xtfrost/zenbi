@@ -26,7 +26,9 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Zenbi calendar entities based on a config entry."""
-    coordinator: ZenbiCalendarDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator: ZenbiCalendarDataUpdateCoordinator = (
+        getattr(entry, "runtime_data", None) or hass.data[DOMAIN][entry.entry_id]
+    )
 
     entities: List[CalendarEntity] = [
         ZenbiScheduleCalendarEntity(coordinator, entry),

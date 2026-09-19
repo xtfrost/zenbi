@@ -30,7 +30,9 @@ async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> Dict[str, Any]:
     """Return diagnostics for a config entry."""
-    coordinator: ZenbiCalendarDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator: ZenbiCalendarDataUpdateCoordinator = (
+        getattr(entry, "runtime_data", None) or hass.data[DOMAIN][entry.entry_id]
+    )
 
     diag_data: Dict[str, Any] = {
         "entry": {
