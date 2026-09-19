@@ -6,6 +6,7 @@ import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 import logging
+import time
 from typing import Dict, List, Optional, Tuple
 
 from homeassistant.config_entries import ConfigEntry
@@ -89,97 +90,115 @@ class ZenbiCalendarDataUpdateCoordinator(DataUpdateCoordinator[ZenbiCalendarData
         )
         self.client = client
         self.entry = entry
+        self.last_sync_success: Optional[datetime] = None
+        self.last_sync_status: str = "success"
+        self.last_error: Optional[str] = None
+        self.consecutive_failures: int = 0
+        self._on_demand_cache: Dict[str, Tuple[float, List[ZenbiCalendarItem]]] = {}
 
     async def async_shutdown(self) -> None:
         """Cancel background update tasks and shut down coordinator."""
         _LOGGER.debug("Shutting down Zenbi coordinator for %s", self.name)
+        self._on_demand_cache.clear()
         if hasattr(super(), "async_shutdown"):
             await super().async_shutdown()
 
     async def _async_update_data(self) -> ZenbiCalendarData:
         """Fetch data from Zenbi API for rolling two-week window concurrently."""
-        now = dt_util.now()
-        start_dt, end_dt = calculate_rolling_window(now)
-        _LOGGER.debug(
-            "Fetching Zenbi calendar window from %s to %s concurrently",
-            start_dt.isoformat(),
-            end_dt.isoformat(),
-        )
+        try:
+            now = dt_util.now()
+            start_dt, end_dt = calculate_rolling_window(now)
+            _LOGGER.debug(
+                "Fetching Zenbi calendar window from %s to %s concurrently",
+                start_dt.isoformat(),
+                end_dt.isoformat(),
+            )
 
-        # Run all 4 endpoint queries concurrently
-        results = await asyncio.gather(
-            self.client.get_calendar_items(start_dt, end_dt),
-            self.client.get_homework(start_dt, end_dt),
-            self.client.get_weekly_schedules(start_dt, end_dt),
-            self.client.get_planning_labels(),
-            return_exceptions=True,
-        )
+            # Run all 4 endpoint queries concurrently
+            results = await asyncio.gather(
+                self.client.get_calendar_items(start_dt, end_dt),
+                self.client.get_homework(start_dt, end_dt),
+                self.client.get_weekly_schedules(start_dt, end_dt),
+                self.client.get_planning_labels(),
+                return_exceptions=True,
+            )
 
-        calendar_res, homework_res, weekly_res, planning_res = results
+            calendar_res, homework_res, weekly_res, planning_res = results
 
-        # Critical endpoint: calendar items
-        if isinstance(calendar_res, Exception):
-            if isinstance(calendar_res, ZenbiAuthError):
-                raise ConfigEntryAuthFailed(f"Zenbi credentials are invalid: {calendar_res}") from calendar_res
-            if isinstance(calendar_res, ZenbiConnectionError):
-                raise UpdateFailed(f"Connection error to Zenbi API: {calendar_res}") from calendar_res
-            if isinstance(calendar_res, ZenbiApiError):
-                raise UpdateFailed(f"Zenbi API error: {calendar_res}") from calendar_res
-            _LOGGER.error("Unexpected error fetching Zenbi calendar data: %s", calendar_res, exc_info=calendar_res)
-            raise UpdateFailed(f"Unexpected error: {calendar_res}") from calendar_res
+            # Critical endpoint: calendar items
+            if isinstance(calendar_res, Exception):
+                if isinstance(calendar_res, ZenbiAuthError):
+                    raise ConfigEntryAuthFailed(f"Zenbi credentials are invalid: {calendar_res}") from calendar_res
+                if isinstance(calendar_res, ZenbiConnectionError):
+                    raise UpdateFailed(f"Connection error to Zenbi API: {calendar_res}") from calendar_res
+                if isinstance(calendar_res, ZenbiApiError):
+                    raise UpdateFailed(f"Zenbi API error: {calendar_res}") from calendar_res
+                _LOGGER.error("Unexpected error fetching Zenbi calendar data: %s", calendar_res, exc_info=calendar_res)
+                raise UpdateFailed(f"Unexpected error: {calendar_res}") from calendar_res
 
-        calendar_items: List[ZenbiCalendarItem] = calendar_res or []
+            calendar_items: List[ZenbiCalendarItem] = calendar_res or []
 
-        # Non-critical endpoints with fallback to empty list
-        if isinstance(homework_res, Exception):
-            if isinstance(homework_res, ZenbiAuthError):
-                raise ConfigEntryAuthFailed(f"Zenbi credentials are invalid: {homework_res}") from homework_res
-            _LOGGER.warning("Failed to fetch Zenbi homework: %s", homework_res)
-            homeworks: List[ZenbiHomework] = []
-        else:
-            homeworks = homework_res or []
+            # Non-critical endpoints with fallback to empty list
+            if isinstance(homework_res, Exception):
+                if isinstance(homework_res, ZenbiAuthError):
+                    raise ConfigEntryAuthFailed(f"Zenbi credentials are invalid: {homework_res}") from homework_res
+                _LOGGER.warning("Failed to fetch Zenbi homework: %s", homework_res)
+                homeworks: List[ZenbiHomework] = []
+            else:
+                homeworks = homework_res or []
 
-        if isinstance(weekly_res, Exception):
-            if isinstance(weekly_res, ZenbiAuthError):
-                raise ConfigEntryAuthFailed(f"Zenbi credentials are invalid: {weekly_res}") from weekly_res
-            _LOGGER.warning("Failed to fetch Zenbi weekly schedules: %s", weekly_res)
-            weekly_schedules: List[ZenbiWeeklySchedule] = []
-        else:
-            weekly_schedules = weekly_res or []
+            if isinstance(weekly_res, Exception):
+                if isinstance(weekly_res, ZenbiAuthError):
+                    raise ConfigEntryAuthFailed(f"Zenbi credentials are invalid: {weekly_res}") from weekly_res
+                _LOGGER.warning("Failed to fetch Zenbi weekly schedules: %s", weekly_res)
+                weekly_schedules: List[ZenbiWeeklySchedule] = []
+            else:
+                weekly_schedules = weekly_res or []
 
-        if isinstance(planning_res, Exception):
-            if isinstance(planning_res, ZenbiAuthError):
-                raise ConfigEntryAuthFailed(f"Zenbi credentials are invalid: {planning_res}") from planning_res
-            _LOGGER.warning("Failed to fetch Zenbi planning labels: %s", planning_res)
-            planning_labels: List[ZenbiPlanningLabel] = []
-        else:
-            planning_labels = planning_res or []
+            if isinstance(planning_res, Exception):
+                if isinstance(planning_res, ZenbiAuthError):
+                    raise ConfigEntryAuthFailed(f"Zenbi credentials are invalid: {planning_res}") from planning_res
+                _LOGGER.warning("Failed to fetch Zenbi planning labels: %s", planning_res)
+                planning_labels: List[ZenbiPlanningLabel] = []
+            else:
+                planning_labels = planning_res or []
 
+            # Associate homework items with their calendar entries
+            if homeworks and calendar_items:
+                hw_by_calendar_id: Dict[str, List[ZenbiHomework]] = {}
+                for hw in homeworks:
+                    if hw.calendar_item_id:
+                        hw_by_calendar_id.setdefault(hw.calendar_item_id, []).append(hw)
 
-        # Associate homework items with their calendar entries
-        if homeworks and calendar_items:
-            hw_by_calendar_id: Dict[str, List[ZenbiHomework]] = {}
-            for hw in homeworks:
-                if hw.calendar_item_id:
-                    hw_by_calendar_id.setdefault(hw.calendar_item_id, []).append(hw)
+                for item in calendar_items:
+                    if item.id in hw_by_calendar_id:
+                        item.homework = hw_by_calendar_id[item.id]
 
-            for item in calendar_items:
-                if item.id in hw_by_calendar_id:
-                    item.homework = hw_by_calendar_id[item.id]
+            # Extract student names from calendar items
+            students = extract_student_names(calendar_items)
 
-        # Extract student names from calendar items
-        students = extract_student_names(calendar_items)
+            data = ZenbiCalendarData(
+                calendar_items=calendar_items,
+                planning_labels=planning_labels,
+                homeworks=homeworks,
+                weekly_schedules=weekly_schedules,
+                students=students,
+                last_synced=now,
+                window_start=start_dt,
+                window_end=end_dt,
+            )
 
-        return ZenbiCalendarData(
-            calendar_items=calendar_items,
-            planning_labels=planning_labels,
-            homeworks=homeworks,
-            weekly_schedules=weekly_schedules,
-            students=students,
-            last_synced=now,
-            window_start=start_dt,
-            window_end=end_dt,
-        )
+            self.last_sync_success = dt_util.utcnow()
+            self.last_sync_status = "success"
+            self.last_error = None
+            self.consecutive_failures = 0
+            return data
+
+        except Exception as err:
+            self.last_sync_status = "failure"
+            self.last_error = str(err)
+            self.consecutive_failures += 1
+            raise
 
     def get_student_calendar_items(
         self, student_name: Optional[str] = None
@@ -259,24 +278,41 @@ class ZenbiCalendarDataUpdateCoordinator(DataUpdateCoordinator[ZenbiCalendarData
                     # Keep items whose dates could not be parsed
                     items.append(item)
         else:
-            # Out of rolling range -> fetch on-demand directly from API
-            _LOGGER.debug(
-                "Requested range (%s to %s) outside cached window. Fetching on demand.",
-                start_date.isoformat(),
-                end_date.isoformat(),
-            )
-            items = await self.client.get_calendar_items(start_date, end_date)
-            try:
-                homeworks = await self.client.get_homework(start_date, end_date)
-                hw_by_calendar_id: Dict[str, List[ZenbiHomework]] = {}
-                for hw in homeworks:
-                    if hw.calendar_item_id:
-                        hw_by_calendar_id.setdefault(hw.calendar_item_id, []).append(hw)
-                for item in items:
-                    if item.id in hw_by_calendar_id:
-                        item.homework = hw_by_calendar_id[item.id]
-            except Exception as err:
-                _LOGGER.debug("Failed to fetch on-demand homework: %s", err)
+            # Out of rolling range -> check on-demand TTL cache (2-hour TTL = 7200s)
+            cache_key = f"{start_date.isoformat()}_{end_date.isoformat()}"
+            now_ts = time.time()
+            if cache_key in self._on_demand_cache:
+                cached_time, cached_items = self._on_demand_cache[cache_key]
+                if now_ts < cached_time + 7200:
+                    _LOGGER.debug(
+                        "Serving on-demand calendar range (%s to %s) from 2h TTL cache",
+                        start_date.isoformat(),
+                        end_date.isoformat(),
+                    )
+                    items = cached_items
+                else:
+                    self._on_demand_cache.pop(cache_key, None)
+
+            if not items:
+                _LOGGER.debug(
+                    "Requested range (%s to %s) outside cached window. Fetching on demand.",
+                    start_date.isoformat(),
+                    end_date.isoformat(),
+                )
+                items = await self.client.get_calendar_items(start_date, end_date)
+                try:
+                    homeworks = await self.client.get_homework(start_date, end_date)
+                    hw_by_calendar_id: Dict[str, List[ZenbiHomework]] = {}
+                    for hw in homeworks:
+                        if hw.calendar_item_id:
+                            hw_by_calendar_id.setdefault(hw.calendar_item_id, []).append(hw)
+                    for item in items:
+                        if item.id in hw_by_calendar_id:
+                            item.homework = hw_by_calendar_id[item.id]
+                except Exception as err:
+                    _LOGGER.debug("Failed to fetch on-demand homework: %s", err)
+
+                self._on_demand_cache[cache_key] = (now_ts, items)
 
         # Apply student filter if specified
         if student_name is not None:

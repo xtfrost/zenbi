@@ -250,6 +250,15 @@ class TodoListEntity:
         pass
 
 
+class EntityCategory(str, enum.Enum):
+    DIAGNOSTIC = "diagnostic"
+    CONFIG = "config"
+
+
+class SensorDeviceClass(str, enum.Enum):
+    TIMESTAMP = "timestamp"
+
+
 class SensorEntity:
     _attr_has_entity_name = False
     _attr_name: Optional[str] = None
@@ -257,6 +266,8 @@ class SensorEntity:
     _attr_translation_key: Optional[str] = None
     _attr_native_value: Any = None
     _attr_extra_state_attributes: Dict[str, Any] = {}
+    _attr_device_class: Optional[SensorDeviceClass] = None
+    _attr_entity_category: Optional[EntityCategory] = None
 
     @property
     def unique_id(self) -> Optional[str]:
@@ -274,12 +285,43 @@ class SensorEntity:
     def extra_state_attributes(self) -> Dict[str, Any]:
         return self._attr_extra_state_attributes
 
+    @property
+    def device_class(self) -> Optional[SensorDeviceClass]:
+        return self._attr_device_class
+
+    @property
+    def entity_category(self) -> Optional[EntityCategory]:
+        return self._attr_entity_category
+
     def async_write_ha_state(self) -> None:
         pass
 
 
+class NumberSelectorMode(str, enum.Enum):
+    BOX = "box"
+    SLIDER = "slider"
+
+
+@dataclass
+class NumberSelectorConfig:
+    min: Optional[float] = None
+    max: Optional[float] = None
+    step: Optional[float] = None
+    mode: Optional[NumberSelectorMode] = None
+    unit_of_measurement: Optional[str] = None
+
+
+class NumberSelector:
+    def __init__(self, config: Optional[NumberSelectorConfig] = None):
+        self.config = config
+
+    def __call__(self, value: Any) -> Any:
+        return value
+
+
 class DeviceEntryType(str, enum.Enum):
     SERVICE = "service"
+
 
 
 @dataclass
@@ -356,6 +398,10 @@ class MockDtUtil:
         return datetime.now(tz or timezone.utc)
 
     @staticmethod
+    def utcnow() -> datetime:
+        return datetime.now(timezone.utc)
+
+    @staticmethod
     def parse_datetime(dt_str: str) -> Optional[datetime]:
         try:
             return datetime.fromisoformat(dt_str)
@@ -413,9 +459,16 @@ def register_mock_modules():
     todo.TodoItemStatus = TodoItemStatus
     components.todo = todo
 
+    # homeassistant.const
+    const = types.ModuleType("homeassistant.const")
+    const.EntityCategory = EntityCategory
+    const.Platform = enum.Enum("Platform", {"CALENDAR": "calendar", "TODO": "todo", "SENSOR": "sensor"})
+    ha.const = const
+
     # homeassistant.components.sensor
     sensor = types.ModuleType("homeassistant.components.sensor")
     sensor.SensorEntity = SensorEntity
+    sensor.SensorDeviceClass = SensorDeviceClass
     components.sensor = sensor
 
     # homeassistant.components.http
@@ -429,6 +482,12 @@ def register_mock_modules():
     aiohttp_client = types.ModuleType("homeassistant.helpers.aiohttp_client")
     aiohttp_client.async_get_clientsession = MagicMock(return_value=MagicMock())
     helpers.aiohttp_client = aiohttp_client
+
+    selector = types.ModuleType("homeassistant.helpers.selector")
+    selector.NumberSelector = NumberSelector
+    selector.NumberSelectorConfig = NumberSelectorConfig
+    selector.NumberSelectorMode = NumberSelectorMode
+    helpers.selector = selector
 
     device_registry = types.ModuleType("homeassistant.helpers.device_registry")
     device_registry.DeviceEntryType = DeviceEntryType
@@ -463,6 +522,7 @@ def register_mock_modules():
 
     # Inject into sys.modules
     sys.modules["homeassistant"] = ha
+    sys.modules["homeassistant.const"] = const
     sys.modules["homeassistant.core"] = core
     sys.modules["homeassistant.config_entries"] = config_entries
     sys.modules["homeassistant.data_entry_flow"] = data_entry_flow
@@ -474,6 +534,7 @@ def register_mock_modules():
     sys.modules["homeassistant.exceptions"] = exceptions
     sys.modules["homeassistant.helpers"] = helpers
     sys.modules["homeassistant.helpers.aiohttp_client"] = aiohttp_client
+    sys.modules["homeassistant.helpers.selector"] = selector
     sys.modules["homeassistant.helpers.device_registry"] = device_registry
     sys.modules["homeassistant.helpers.entity_platform"] = entity_platform
     sys.modules["homeassistant.helpers.storage"] = storage

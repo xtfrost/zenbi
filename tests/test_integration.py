@@ -37,11 +37,15 @@ from custom_components.zenbi.todo import (
     async_setup_entry as async_setup_todo_entry,
 )
 from custom_components.zenbi.sensor import (
+    ZenbiLastSyncedSensor,
     ZenbiWeeklyPlanSensor,
     async_setup_entry as async_setup_sensor_entry,
 )
 from custom_components.zenbi.http import ZenbiFileDownloadView
+from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.components.todo import TodoItem, TodoItemStatus
+from homeassistant.const import EntityCategory
+from homeassistant.helpers.selector import NumberSelector, NumberSelectorMode
 from homeassistant.util import dt as dt_util
 from custom_components.zenbi.config_flow import ZenbiConfigFlow
 from custom_components.zenbi.const import (
@@ -234,13 +238,14 @@ async def test_calendar_schedule_entity(mock_hass, mock_config_entry, mock_clien
     # Current/next event property
     next_event = entity.event
     assert next_event is not None
-    assert next_event.summary == "Danish Literature"
+    assert next_event.summary == "Danish Literature 📚"
     assert next_event.location == "Room 402"
     assert "Reading essay" in next_event.description
     assert "Note: Bring text book" in next_event.description
     assert "Substitutes: Mrs. Jensen" in next_event.description
     assert "Resources: Room 402" in next_event.description
-    assert "Homework:" in next_event.description
+    assert "### Lektier" in next_event.description
+    assert "Afleveringsfrist:" in next_event.description
     assert "Read essay pages 10-15" in next_event.description
     assert "essay_notes.pdf" in next_event.description
 
@@ -408,6 +413,13 @@ async def test_options_flow(mock_config_entry):
     # Initial view
     res = await flow.async_step_init()
     assert res["type"] == "form"
+    schema = res["schema"].schema
+    cal_key = next(k for k in schema if getattr(k, "schema", None) == CONF_CALENDAR_SYNC_INTERVAL_HOURS)
+    cal_sel = schema[cal_key]
+    assert isinstance(cal_sel, NumberSelector)
+    assert cal_sel.config.mode == NumberSelectorMode.BOX
+    assert cal_sel.config.min == 1
+    assert cal_sel.config.max == 168
 
     # Save options
     res2 = await flow.async_step_init(
@@ -1049,12 +1061,15 @@ async def test_multi_student_platform_setup(mock_hass, mock_config_entry, mock_c
     # 3. Sensor setup
     sensor_entities = []
     await async_setup_sensor_entry(mock_hass, mock_config_entry, lambda ents: sensor_entities.extend(ents))
-    assert len(sensor_entities) == 2
+    assert len(sensor_entities) == 3
     sensor_albert = next(e for e in sensor_entities if e.unique_id == "entry_123_albert_hansen_weekly_plan")
     sensor_ida = next(e for e in sensor_entities if e.unique_id == "entry_123_ida_hansen_weekly_plan")
+    last_synced = next(e for e in sensor_entities if e.unique_id == "entry_123_last_synced")
 
     assert sensor_albert.device_info.name == "Zenbi (Albert Hansen)"
     assert sensor_ida.device_info.name == "Zenbi (Ida Hansen)"
+    assert last_synced.device_info.name == "Zenbi (School)"
+    assert (DOMAIN, "entry_123_school") in last_synced.device_info.identifiers
 
 
 @pytest.mark.asyncio
@@ -1368,5 +1383,109 @@ async def test_multi_student_todo_persistence(mock_hass, mock_config_entry, mock
     assert isinstance(saved_data, dict)
     assert set(saved_data["Albert Hansen"]) == {"hw-1", "hw-3"}
     assert set(saved_data["Ida Hansen"]) == {"hw-2"}
+
+
+@pytest.mark.asyncio
+async def test_last_synced_sensor_success(mock_hass, mock_config_entry, mock_client):
+    """Test ZenbiLastSyncedSensor on successful coordinator cycle."""
+    coordinator = ZenbiCalendarDataUpdateCoordinator(mock_hass, mock_client, mock_config_entry)
+    now = datetime(2026, 9, 21, 10, 0, 0, tzinfo=timezone.utc)
+    coordinator.last_sync_success = now
+    coordinator.last_sync_status = "success"
+    coordinator.last_error = None
+    coordinator.consecutive_failures = 0
+    coordinator.data = ZenbiCalendarData(
+        students=["Albert Hansen"],
+        window_start=datetime(2026, 9, 21, 0, 0, 0, tzinfo=timezone.utc),
+        window_end=datetime(2026, 10, 5, 0, 0, 0, tzinfo=timezone.utc),
+    )
+
+    sensor = ZenbiLastSyncedSensor(coordinator, mock_config_entry)
+
+    assert sensor.unique_id == f"{mock_config_entry.entry_id}_last_synced"
+    assert sensor.device_class == SensorDeviceClass.TIMESTAMP
+    assert sensor.entity_category == EntityCategory.DIAGNOSTIC
+    assert sensor.native_value == now
+
+    attrs = sensor.extra_state_attributes
+    assert attrs["last_status"] == "success"
+    assert attrs["last_error"] is None
+    assert attrs["consecutive_failures"] == 0
+    assert "2026-09-21" in attrs["rolling_window_start"]
+    assert "2026-10-05" in attrs["rolling_window_end"]
+
+    # Device assignment: School device because students are present
+    assert sensor.device_info.name == "Zenbi (School)"
+    assert (DOMAIN, f"{mock_config_entry.entry_id}_school") in sensor.device_info.identifiers
+
+
+@pytest.mark.asyncio
+async def test_last_synced_sensor_failure_resilience(mock_hass, mock_config_entry, mock_client):
+    """Test that last synced sensor retains last good timestamp when sync fails, but updates failure attributes."""
+    coordinator = ZenbiCalendarDataUpdateCoordinator(mock_hass, mock_client, mock_config_entry)
+    last_good_time = datetime(2026, 9, 21, 8, 0, 0, tzinfo=timezone.utc)
+    coordinator.last_sync_success = last_good_time
+
+    mock_client.get_calendar_items.side_effect = ZenbiConnectionError("Connection timed out to Zenbi")
+
+    # Simulate failing update
+    with pytest.raises(Exception):
+        await coordinator._async_update_data()
+
+    assert coordinator.last_sync_status == "failure"
+    assert coordinator.consecutive_failures == 1
+    assert "Connection timed out" in coordinator.last_error
+
+    sensor = ZenbiLastSyncedSensor(coordinator, mock_config_entry)
+
+    # State still retains the previous successful sync timestamp!
+    assert sensor.native_value == last_good_time
+
+    # Extra state attributes reflect the failure details
+    attrs = sensor.extra_state_attributes
+    assert attrs["last_status"] == "failure"
+    assert "Connection timed out" in attrs["last_error"]
+    assert attrs["consecutive_failures"] == 1
+
+
+@pytest.mark.asyncio
+async def test_coordinator_on_demand_calendar_ttl_cache(mock_hass, mock_config_entry, mock_client):
+    """Test that out-of-window on-demand queries are cached in memory with a 2-hour TTL."""
+    coordinator = ZenbiCalendarDataUpdateCoordinator(mock_hass, mock_client, mock_config_entry)
+    coordinator.data = ZenbiCalendarData(
+        window_start=datetime(2026, 9, 21, 0, 0, tzinfo=timezone.utc),
+        window_end=datetime(2026, 10, 5, 0, 0, tzinfo=timezone.utc),
+    )
+
+    out_of_window_start = datetime(2026, 8, 1, 0, 0, tzinfo=timezone.utc)
+    out_of_window_end = datetime(2026, 8, 31, 23, 59, tzinfo=timezone.utc)
+
+    mock_client.get_calendar_items.return_value = [
+        ZenbiCalendarItem(
+            id="past-cal-1",
+            title="Historie",
+            start="2026-08-15T08:00:00+02:00",
+            end="2026-08-15T09:00:00+02:00",
+        )
+    ]
+    mock_client.get_homework.return_value = []
+
+    # First query -> cache miss -> queries API
+    items_first = await coordinator.async_get_calendar_items(out_of_window_start, out_of_window_end)
+    assert len(items_first) == 1
+    assert items_first[0].id == "past-cal-1"
+    assert mock_client.get_calendar_items.call_count == 1
+
+    # Second query for same range -> cache hit -> returns from in-memory cache with ZERO extra API calls
+    items_second = await coordinator.async_get_calendar_items(out_of_window_start, out_of_window_end)
+    assert len(items_second) == 1
+    assert items_second[0].id == "past-cal-1"
+    assert mock_client.get_calendar_items.call_count == 1  # call count unchanged!
+
+    # Test cache shutdown cleanup
+    await coordinator.async_shutdown()
+    assert coordinator._on_demand_cache == {}
+
+
 
 

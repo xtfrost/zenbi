@@ -8,6 +8,11 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers.selector import (
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
+)
 
 from .const import (
     CONF_CALENDAR_SYNC_INTERVAL_HOURS,
@@ -55,11 +60,27 @@ class ZenbiOptionsFlowHandler(config_entries.OptionsFlow):
                 vol.Required(
                     CONF_CALENDAR_SYNC_INTERVAL_HOURS,
                     default=current_calendar_hours,
-                ): vol.All(vol.Coerce(int), vol.Range(min=1, max=168)),
+                ): NumberSelector(
+                    NumberSelectorConfig(
+                        min=1,
+                        max=168,
+                        step=1,
+                        mode=NumberSelectorMode.BOX,
+                        unit_of_measurement="h",
+                    )
+                ),
                 vol.Required(
                     CONF_NOTIFICATION_SYNC_INTERVAL_MINS,
                     default=current_notification_mins,
-                ): vol.All(vol.Coerce(int), vol.Range(min=1, max=1440)),
+                ): NumberSelector(
+                    NumberSelectorConfig(
+                        min=1,
+                        max=1440,
+                        step=1,
+                        mode=NumberSelectorMode.BOX,
+                        unit_of_measurement="min",
+                    )
+                ),
             }
         )
 

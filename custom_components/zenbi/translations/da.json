@@ -63,6 +63,9 @@
     "sensor": {
       "weekly_plan": {
         "name": "Ugeplan"
+      },
+      "last_synced": {
+        "name": "Sidst synkroniseret"
       }
     }
   }

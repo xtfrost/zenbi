@@ -23,17 +23,25 @@ Zenbi automatically detects all enrolled students and creates dedicated devices:
 | `sensor.zenbi_{student}_weekly_plan` | Sensor | Student | Active weekly plan (**Ugeplan**) with clean Markdown text attributes for dashboard cards. |
 | `calendar.zenbi_planning` | Calendar | School | Semester milestones, school vacations, and all-day events (**Årsplan**). |
 | `calendar.zenbi_weekly_messages` | Calendar | School | 7-day all-day events for weekly teacher letters (**Ugebreve**) with attachment previews. |
+| `sensor.zenbi_last_synced` | Sensor | School | Diagnostic timestamp (**Sidst synkroniseret**) and health attributes for sync tracking. |
 
 ---
 
-## Lovelace Dashboard Markdown Card Example
+## Lovelace Dashboard Examples
 
-Easily render your child's weekly plan directly in a standard Markdown card:
-
+### Weekly Plan (Ugeplan) Markdown Card
 ```yaml
 type: markdown
 title: Ugeplan for Albert
 content: '{{ state_attr("sensor.zenbi_albert_hansen_weekly_plan", "current_week_plan") }}'
+```
+
+### Sync Status Tile Card
+```yaml
+type: tile
+entity: sensor.zenbi_last_synced
+name: Zenbi Synkronisering
+icon: mdi:sync
 ```
 
 ---

@@ -6,8 +6,9 @@ from datetime import date, datetime
 import logging
 from typing import Any, Dict, List, Optional
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -30,7 +31,7 @@ async def async_setup_entry(
         getattr(entry, "runtime_data", None) or hass.data[DOMAIN][entry.entry_id]
     )
 
-    entities: List[ZenbiWeeklyPlanSensor] = []
+    entities: List[SensorEntity] = []
     students = coordinator.data.students if coordinator.data else []
 
     if students:
@@ -43,7 +44,75 @@ async def async_setup_entry(
             ZenbiWeeklyPlanSensor(coordinator, entry, student_name=None)
         )
 
+    # Diagnostic sync status timestamp sensor on the primary school/integration device
+    entities.append(ZenbiLastSyncedSensor(coordinator, entry))
+
     async_add_entities(entities)
+
+
+class ZenbiLastSyncedSensor(
+    CoordinatorEntity[ZenbiCalendarDataUpdateCoordinator], SensorEntity
+):
+    """Diagnostic sensor exposing the timestamp of the last successful synchronization with Zenbi."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "last_synced"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self,
+        coordinator: ZenbiCalendarDataUpdateCoordinator,
+        entry: ConfigEntry,
+    ) -> None:
+        """Initialize the last synced diagnostic sensor."""
+        super().__init__(coordinator)
+        self.entry = entry
+        self._attr_unique_id = f"{entry.entry_id}_last_synced"
+        self._cached_device_info: DeviceInfo = self._build_device_info()
+
+    def _build_device_info(self) -> DeviceInfo:
+        """Build a DeviceInfo object assigned to the primary school/integration device."""
+        has_students = bool(self.coordinator.data and self.coordinator.data.students)
+        device_name = "Zenbi (School)" if has_students else "Zenbi"
+        ident = f"{self.entry.entry_id}_school" if has_students else self.entry.entry_id
+        return DeviceInfo(
+            identifiers={(DOMAIN, ident)},
+            name=device_name,
+            manufacturer="Zenbi",
+            model="Zenbi Education Portal",
+            entry_type=DeviceEntryType.SERVICE,
+        )
+
+    def _handle_coordinator_update(self) -> None:
+        """Update device info cache and state when coordinator data refreshes."""
+        self._cached_device_info = self._build_device_info()
+        super()._handle_coordinator_update()
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return the device info."""
+        return self._cached_device_info
+
+    @property
+    def native_value(self) -> Optional[datetime]:
+        """Return the timestamp of the last successful synchronization."""
+        return self.coordinator.last_sync_success
+
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        """Return diagnostic sync details and rolling window metadata."""
+        attrs: Dict[str, Any] = {
+            "last_status": self.coordinator.last_sync_status,
+            "last_error": self.coordinator.last_error,
+            "consecutive_failures": self.coordinator.consecutive_failures,
+        }
+        if self.coordinator.data:
+            if self.coordinator.data.window_start:
+                attrs["rolling_window_start"] = self.coordinator.data.window_start.isoformat()
+            if self.coordinator.data.window_end:
+                attrs["rolling_window_end"] = self.coordinator.data.window_end.isoformat()
+        return attrs
 
 
 class ZenbiWeeklyPlanSensor(

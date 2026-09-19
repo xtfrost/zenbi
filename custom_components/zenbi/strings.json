@@ -63,6 +63,9 @@
     "sensor": {
       "weekly_plan": {
         "name": "Weekly Plan"
+      },
+      "last_synced": {
+        "name": "Last Synced"
       }
     }
   }

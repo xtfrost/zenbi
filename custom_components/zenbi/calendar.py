@@ -62,6 +62,27 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
+def _format_date_clean(val: Optional[str]) -> Optional[str]:
+    """Format an ISO date or datetime string into a readable format."""
+    if not val:
+        return None
+    try:
+        parsed = dt_util.parse_datetime(str(val))
+        if parsed:
+            return (
+                parsed.strftime("%Y-%m-%d %H:%M")
+                if (parsed.hour or parsed.minute)
+                else parsed.strftime("%Y-%m-%d")
+            )
+        d = dt_util.parse_date(str(val))
+        if d:
+            return d.strftime("%Y-%m-%d")
+    except Exception:
+        pass
+    clean = str(val).split(".")[0]
+    return clean.replace("T00:00:00", "").replace("T", " ")
+
+
 class ZenbiBaseCalendarEntity(
     CoordinatorEntity[ZenbiCalendarDataUpdateCoordinator], CalendarEntity
 ):
@@ -223,29 +244,53 @@ class ZenbiScheduleCalendarEntity(ZenbiBaseCalendarEntity):
                 if sub_names:
                     desc_parts.append(f"Substitutes: {', '.join(sub_names)}")
 
+            summary = item.title
+            if item.homework:
+                summary = f"{item.title} 📚"
+
             if item.homework:
                 hw_sections: List[str] = []
                 for hw in item.homework:
                     section: List[str] = []
+                    meta_lines: List[str] = []
+                    if getattr(hw, "date", None):
+                        clean_d = _format_date_clean(hw.date)
+                        if clean_d:
+                            meta_lines.append(f"**Afleveringsfrist:** {clean_d}")
+                    if getattr(hw, "updated_time", None):
+                        clean_u = _format_date_clean(hw.updated_time)
+                        if clean_u:
+                            meta_lines.append(f"**Oprettet / opdateret:** {clean_u}")
+                    if meta_lines:
+                        section.append("\n".join(meta_lines))
+
                     if hw.description:
                         section.append(hw.description)
+
                     if hw.files:
-                        file_names = [
-                            f.get("name") or f.get("title")
-                            for f in hw.files
-                            if isinstance(f, dict) and (f.get("name") or f.get("title"))
-                        ]
-                        if file_names:
-                            section.append(f"Files: {', '.join(filter(None, file_names))}")
+                        file_links: List[str] = []
+                        for f in hw.files:
+                            if isinstance(f, dict):
+                                f_id = f.get("id") or f.get("fileId")
+                                name = f.get("name") or f.get("title")
+                                if name and f_id:
+                                    url = f"/api/zenbi/file/{self.entry.entry_id}/{f_id}"
+                                    file_links.append(f"[{name}]({url})")
+                                elif name:
+                                    file_links.append(name)
+                        if file_links:
+                            section.append("Vedhæftede filer:\n" + "\n".join(f"- {fl}" for fl in file_links))
+
                     if section:
-                        hw_sections.append("\n".join(section))
+                        hw_sections.append("\n\n".join(section))
+
                 if hw_sections:
-                    desc_parts.append("Homework:\n" + "\n---\n".join(hw_sections))
+                    desc_parts.append("### Lektier\n\n" + "\n\n---\n\n".join(hw_sections))
 
             return CalendarEvent(
                 start=start_dt,
                 end=end_dt,
-                summary=item.title,
+                summary=summary,
                 description="\n\n".join(desc_parts) if desc_parts else None,
                 location=location,
                 uid=str(item.id),

@@ -106,15 +106,87 @@ When an account is connected, Zenbi automatically discovers all enrolled childre
 | `sensor.zenbi_{student}_weekly_plan` | Ugeplan / Weekly Plan | Student | Active weekly plan with formatted Markdown text attributes for Lovelace cards. |
 | `calendar.zenbi_planning` | Årsplan / Planning | School | All-day school semester milestones, term dates, and holidays. |
 | `calendar.zenbi_weekly_messages` | Ugebreve / Weekly Messages | School | 7-day all-day events containing weekly teacher letters and attachment lists. |
+| `sensor.zenbi_last_synced` | Sidst synkroniseret / Last Synced | School | Diagnostic timestamp sensor tracking last successful sync, status, and error details. |
 
-### Dashboard Markdown Card Example
+---
 
-Display your child's weekly plan directly on a Lovelace dashboard:
+## Lovelace Dashboard Examples
+
+Here are ready-to-use Lovelace dashboard configurations to get the most out of your Zenbi school data.
+
+### 1. Weekly Plan (Ugeplan) Markdown Card
+Renders the active week's plan with rich formatting, clickable file attachment links, and an optional preview of next week:
 
 ```yaml
 type: markdown
-title: Ugeplan for Albert
-content: '{{ state_attr("sensor.zenbi_albert_hansen_weekly_plan", "current_week_plan") }}'
+title: Ugeplan
+content: >-
+  {{ state_attr('sensor.zenbi_albert_hansen_weekly_plan', 'current_week_plan') }}
+
+  {% if state_attr('sensor.zenbi_albert_hansen_weekly_plan', 'next_week_plan') %}
+  ---
+  ### Næste uges plan ({{ state_attr('sensor.zenbi_albert_hansen_weekly_plan', 'next_week_title') }})
+  {{ state_attr('sensor.zenbi_albert_hansen_weekly_plan', 'next_week_plan') }}
+  {% endif %}
+```
+
+### 2. Timed Class Schedule (Calendar Card)
+Displays your child's daily class schedule alongside school holidays and semester milestones:
+
+```yaml
+type: calendar
+title: Skoleskema
+initial_view: dayGridMonth
+entities:
+  - calendar.zenbi_albert_hansen_schedule
+  - calendar.zenbi_planning
+```
+
+### 3. Homework Checklist (To-do List Card)
+An interactive checklist of school assignments that syncs completion status persistently:
+
+```yaml
+type: todo-list
+entity: todo.zenbi_albert_hansen_homework
+title: Lektier
+```
+
+### 4. Integration Sync Status (Tile Card)
+Displays the timestamp of the last successful sync with relative time formatting, along with diagnostic status:
+
+```yaml
+type: tile
+entity: sensor.zenbi_last_synced
+name: Zenbi Synkronisering
+icon: mdi:sync
+```
+
+### 5. Complete Student Dashboard (Vertical Stack)
+Combine all cards into a single cohesive student school dashboard view:
+
+```yaml
+type: vertical-stack
+cards:
+  - type: tile
+    entity: sensor.zenbi_last_synced
+    name: Zenbi Status
+    icon: mdi:school-outline
+
+  - type: todo-list
+    entity: todo.zenbi_albert_hansen_homework
+    title: Lektier
+
+  - type: calendar
+    entities:
+      - calendar.zenbi_albert_hansen_schedule
+      - calendar.zenbi_planning
+    initial_view: dayGridMonth
+    title: Skema & Årsplan
+
+  - type: markdown
+    title: Ugeplan
+    content: >-
+      {{ state_attr('sensor.zenbi_albert_hansen_weekly_plan', 'current_week_plan') }}
 ```
 
 ### On-Demand Attachment Downloads

@@ -291,10 +291,49 @@ flowchart TD
 
 ---
 
-### Phase 7: Notification Platform & Unread Messages (Deferred)
+### Phase 7: Diagnostic Sync Status Sensor, Options Flow & Lovelace Documentation (Completed)
+- [x] **Data Coordinator Health Tracking (`coordinator.py`)**:
+  - Track `last_sync_success: Optional[datetime]`, `last_sync_status: str`, `last_error: Optional[str]`, and `consecutive_failures: int`.
+  - Update timestamps and counters on sync success and failure cycles.
+- [x] **Diagnostic Timestamp Sensor (`sensor.py`)**:
+  - Implemented `ZenbiLastSyncedSensor(CoordinatorEntity, SensorEntity)`.
+  - Device Class: `SensorDeviceClass.TIMESTAMP`, Entity Category: `EntityCategory.DIAGNOSTIC`.
+  - Assigned to the primary School / Integration service device (`sensor.zenbi_last_synced`).
+  - Extra state attributes: `last_status`, `last_error`, `consecutive_failures`, `rolling_window_start`, `rolling_window_end`.
+- [x] **Options Flow Number Box Input (`options_flow.py`)**:
+  - Switched sync interval fields from auto-slider to `NumberSelector` with `NumberSelectorMode.BOX` for precise numeric input.
+- [x] **Localization**:
+  - Synchronized translation key `last_synced` across `strings.json`, `da.json` ("Sidst synkroniseret"), and `en.json` ("Last Synced").
+- [x] **Dashboard Documentation (`README.md` & `info.md`)**:
+  - Documented complete Lovelace dashboard configurations:
+    - Sync status Tile / Glance card.
+    - Weekly Plan Markdown card with clickable attachment downloads.
+    - Schedule Calendar card.
+    - Homework To-do list card.
+    - Full vertical-stack student dashboard.
+- [x] **Automated Testing**:
+  - Added unit and integration tests verifying sensor state, attributes, resilience across errors, device attachment, and number selector configuration (60/60 passing).
+
+---
+
+### Phase 8: Homework Calendar Badges & On-Demand Historical Range Caching (Completed)
+- [x] **Calendar Event Presentation (`calendar.py`)**:
+  - Add visual homework badge indicator `{subject} 📚` to event summaries when homework is assigned.
+  - Format event description with `### Lektier`, due date (`Afleveringsfrist`), added/updated date (`Oprettet / opdateret`), homework description, and on-demand proxy download links (`[File Name](/api/zenbi/file/{entry_id}/{file_id})`).
+- [x] **On-Demand Historical Range Caching (`coordinator.py`)**:
+  - Implement an in-memory TTL cache (2-hour TTL) for on-demand date range queries outside the rolling window (`async_get_calendar_items`).
+  - Cache results across repeated calendar browsing navigation to prevent duplicate API requests.
+- [x] **Automated Testing**:
+  - Added integration tests verifying homework badge in event summary, description metadata formatting, and on-demand cache hits (61/61 passing).
+
+---
+
+### Phase 9: Notification Platform & Unread Messages (Deferred)
 - [ ] **Notifications Endpoint**: Implement real API calls for `/api/notification/...` replacing the placeholder in `client.py`.
 - [ ] **Multi-Parent Targeting**: Design notification delivery to handle distinct parent accounts and notification channels.
 - [ ] **Sensor / Binary Sensor**: Add `binary_sensor.zenbi_unread_messages` tracking unread notices.
+
+
 
 
 
