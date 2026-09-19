@@ -100,7 +100,11 @@ class MockConfigFlow:
 
 class MockOptionsFlow:
     def __init__(self, config_entry: Any = None):
-        self.config_entry = config_entry
+        self._config_entry = config_entry
+
+    @property
+    def config_entry(self) -> Any:
+        return self._config_entry
 
     def async_show_form(
         self, step_id: str, data_schema: Any, errors: Optional[Dict[str, str]] = None
