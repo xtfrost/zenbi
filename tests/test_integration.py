@@ -9,6 +9,7 @@ import pytest
 
 from custom_components.zenbi import (
     async_reload_entry,
+    async_remove_entry,
     async_setup_entry,
     async_unload_entry,
 )
@@ -46,13 +47,15 @@ from custom_components.zenbi.const import (
     DEFAULT_CALENDAR_SYNC_INTERVAL_HOURS,
     DEFAULT_NOTIFICATION_SYNC_INTERVAL_MINS,
     DOMAIN,
+    STORAGE_KEY_TODO,
+    STORAGE_VERSION,
 )
 from custom_components.zenbi.coordinator import (
     ZenbiCalendarData,
     ZenbiCalendarDataUpdateCoordinator,
 )
 from custom_components.zenbi.options_flow import ZenbiOptionsFlowHandler
-from tests.conftest import MockConfigEntry, MockHomeAssistant, UpdateFailed
+from tests.conftest import MockConfigEntry, MockHomeAssistant, MockStore, UpdateFailed
 
 
 @pytest.fixture
@@ -419,10 +422,16 @@ async def test_entry_setup_and_unload(mock_hass, mock_config_entry):
         assert setup_ok is True
         assert DOMAIN in mock_hass.data
         assert mock_config_entry.entry_id in mock_hass.data[DOMAIN]
+        coordinator = mock_hass.data[DOMAIN][mock_config_entry.entry_id]
 
-        unload_ok = await async_unload_entry(mock_hass, mock_config_entry)
-        assert unload_ok is True
-        assert mock_config_entry.entry_id not in mock_hass.data[DOMAIN]
+        with patch.object(coordinator, "async_shutdown", AsyncMock()) as mock_shutdown:
+            unload_ok = await async_unload_entry(mock_hass, mock_config_entry)
+            assert unload_ok is True
+            assert mock_config_entry.entry_id not in mock_hass.data[DOMAIN]
+            assert mock_config_entry.runtime_data is None
+            mock_shutdown.assert_called_once()
+            # Crucial: Shared aiohttp session must NOT be closed during unload
+            mock_client_cls.return_value.close.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -763,6 +772,93 @@ async def test_todo_entity_malformed_homework(mock_hass, mock_config_entry, mock
     items = await entity.async_get_todo_items()
     assert len(items) == 1
     assert items[0].uid == "valid-hw"
+
+
+@pytest.mark.asyncio
+async def test_entry_remove_cleans_storage(mock_hass, mock_config_entry):
+    """Test async_remove_entry deletes persistent storage file."""
+    storage_key = STORAGE_KEY_TODO.format(entry_id=mock_config_entry.entry_id)
+    MockStore._storage_data[storage_key] = {"completed_ids": ["hw-123"]}
+
+    await async_remove_entry(mock_hass, mock_config_entry)
+    assert storage_key not in MockStore._storage_data
+
+
+@pytest.mark.asyncio
+async def test_entry_remove_handles_storage_error(mock_hass, mock_config_entry):
+    """Test async_remove_entry handles storage removal errors gracefully without crashing."""
+    with patch("tests.conftest.MockStore.async_remove", side_effect=OSError("Disk error")):
+        # Should not raise exception
+        await async_remove_entry(mock_hass, mock_config_entry)
+
+
+@pytest.mark.asyncio
+async def test_todo_entity_store_persistence(mock_hass, mock_config_entry, mock_client):
+    """Test ZenbiHomeworkTodoListEntity loads and saves completed IDs via Home Assistant Store helper."""
+    coordinator = ZenbiCalendarDataUpdateCoordinator(mock_hass, mock_client, mock_config_entry)
+
+    # Pre-seed persistent storage with one completed homework ID
+    storage_key = STORAGE_KEY_TODO.format(entry_id=mock_config_entry.entry_id)
+    MockStore._storage_data[storage_key] = {"completed_ids": ["hw-100"]}
+
+    hw1 = ZenbiHomework(
+        id="hw-100",
+        calendar_item_id="",
+        description="Math exercise 1",
+        raw_description="",
+        date="2026-09-22",
+    )
+    hw2 = ZenbiHomework(
+        id="hw-200",
+        calendar_item_id="",
+        description="English essay",
+        raw_description="",
+        date="2026-09-23",
+    )
+    coordinator.data = ZenbiCalendarData(homeworks=[hw1, hw2])
+
+    entity = ZenbiHomeworkTodoListEntity(coordinator, mock_config_entry)
+
+    # Simulate HA adding entity to hass -> triggers async_added_to_hass
+    await entity.async_added_to_hass()
+
+    items = await entity.async_get_todo_items()
+    assert len(items) == 2
+    # hw-100 was loaded from storage as COMPLETED
+    assert items[0].uid == "hw-100"
+    assert items[0].status == TodoItemStatus.COMPLETED
+    # hw-200 was not in storage -> NEEDS_ACTION
+    assert items[1].uid == "hw-200"
+    assert items[1].status == TodoItemStatus.NEEDS_ACTION
+
+    # Update hw-200 to COMPLETED -> verifies async_save to Store
+    await entity.async_update_todo_item(
+        TodoItem(uid="hw-200", summary="", status=TodoItemStatus.COMPLETED)
+    )
+    assert set(MockStore._storage_data[storage_key]["completed_ids"]) == {"hw-100", "hw-200"}
+
+    # Toggle hw-100 back to NEEDS_ACTION -> verifies removal in saved Store
+    await entity.async_update_todo_item(
+        TodoItem(uid="hw-100", summary="", status=TodoItemStatus.NEEDS_ACTION)
+    )
+    assert set(MockStore._storage_data[storage_key]["completed_ids"]) == {"hw-200"}
+
+
+@pytest.mark.asyncio
+async def test_todo_entity_store_load_error_handling(mock_hass, mock_config_entry, mock_client):
+    """Test that store loading exceptions do not crash entity initialization."""
+    coordinator = ZenbiCalendarDataUpdateCoordinator(mock_hass, mock_client, mock_config_entry)
+    coordinator.data = ZenbiCalendarData(homeworks=[ZenbiHomework(id="h1", calendar_item_id="", description="", raw_description="", date="")])
+
+    entity = ZenbiHomeworkTodoListEntity(coordinator, mock_config_entry)
+    with patch("tests.conftest.MockStore.async_load", side_effect=ValueError("Corrupt JSON")):
+        await entity.async_added_to_hass()
+
+    # Defaults cleanly to empty set, item is NEEDS_ACTION
+    items = await entity.async_get_todo_items()
+    assert len(items) == 1
+    assert items[0].status == TodoItemStatus.NEEDS_ACTION
+
 
 
 

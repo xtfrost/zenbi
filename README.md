@@ -42,6 +42,11 @@ This integration brings school schedules, homework tasks, weekly letters ("ugebr
   - If school credentials expire or change, Home Assistant prompts for an updated password via the UI without requiring re-configuration.
 - 🩺 **Diagnostics Platform**:
   - Native Home Assistant diagnostics support with automatic redaction of passwords, tokens, and device identifiers.
+- 🧹 **Lifecycle Safety & Storage Integrity**:
+  - Persistent completed homework states saved atomically via Home Assistant's native `Store` helper (`.storage/zenbi.<entry_id>`).
+  - Automated cleanup in `async_remove_entry` purging storage files upon uninstallation.
+  - Standalone entity provisioning with zero injection or pollution of native `local_calendar` or `local_todo`.
+  - Safe unloading preserving shared `aiohttp` connections while cleanly terminating coordinator update timers.
 
 ---
 

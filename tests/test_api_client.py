@@ -159,7 +159,6 @@ async def test_get_calendar_items_and_empty_handling():
                 "elementId": "plan-1",
                 "color": "#ff0000",
                 "icon": "book",
-                "asAbsence": False,
                 "worktime": True,
             },
         }

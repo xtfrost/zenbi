@@ -126,6 +126,9 @@ class MockHomeAssistant:
         self.config_entries.async_forward_entry_setups = AsyncMock(return_value=True)
         self.config_entries.async_unload_platforms = AsyncMock(return_value=True)
 
+    async def async_add_executor_job(self, target: Callable, *args: Any, **kwargs: Any) -> Any:
+        return target(*args, **kwargs)
+
 
 @dataclass
 class CalendarEvent:
@@ -259,10 +262,37 @@ class DataUpdateCoordinator(Generic[_DataT]):
     async def async_config_entry_first_refresh(self):
         self.data = await self._async_update_data()
 
+    async def async_shutdown(self) -> None:
+        pass
+
 
 class CoordinatorEntity(Generic[_CoordinatorT]):
     def __init__(self, coordinator: _CoordinatorT):
         self.coordinator = coordinator
+
+    async def async_added_to_hass(self) -> None:
+        pass
+
+
+class MockStore:
+    """Mock Home Assistant Store helper."""
+
+    _storage_data: Dict[str, Any] = {}
+
+    def __init__(self, hass: Any, version: int, key: str, **kwargs: Any) -> None:
+        self.hass = hass
+        self.version = version
+        self.key = key
+
+    async def async_load(self) -> Optional[Any]:
+        return MockStore._storage_data.get(self.key)
+
+    async def async_save(self, data: Any) -> None:
+        MockStore._storage_data[self.key] = data
+
+    async def async_remove(self) -> None:
+        MockStore._storage_data.pop(self.key, None)
+
 
 
 class MockDtUtil:
@@ -344,6 +374,10 @@ def register_mock_modules():
     entity_platform.AddEntitiesCallback = Callable
     helpers.entity_platform = entity_platform
 
+    storage = types.ModuleType("homeassistant.helpers.storage")
+    storage.Store = MockStore
+    helpers.storage = storage
+
     update_coordinator = types.ModuleType("homeassistant.helpers.update_coordinator")
     update_coordinator.DataUpdateCoordinator = DataUpdateCoordinator
     update_coordinator.CoordinatorEntity = CoordinatorEntity
@@ -369,6 +403,7 @@ def register_mock_modules():
     sys.modules["homeassistant.helpers.aiohttp_client"] = aiohttp_client
     sys.modules["homeassistant.helpers.device_registry"] = device_registry
     sys.modules["homeassistant.helpers.entity_platform"] = entity_platform
+    sys.modules["homeassistant.helpers.storage"] = storage
     sys.modules["homeassistant.helpers.update_coordinator"] = update_coordinator
     sys.modules["homeassistant.util"] = util
     sys.modules["homeassistant.util.dt"] = dt

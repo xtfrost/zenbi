@@ -9,21 +9,29 @@ This document serves as the retroactive architectural baseline, test coverage au
 The integration connects Home Assistant to the Danish school communication platform Zenbi (`https://app.zenbi.dk`). It is engineered to Home Assistant Core standards with asynchronous I/O, HACS packaging compatibility, and localization.
 
 ### 1.1 Directory Structure
+
 ```text
+hacs.json                 # HACS integration metadata and minimum HA requirements
+info.md                   # HACS UI landing and information overview
+README.md                 # Full repository and integration documentation
+PLANNING.md               # Architectural roadmap and baseline tracking
+AGENTS.md                 # Operational guidelines and Definition of Done
+
 custom_components/zenbi/
-├── __init__.py           # Lifecycle hooks: setup, unload, reload listeners
+├── __init__.py           # Lifecycle hooks: setup, unload, reload listeners, async_remove_entry
 ├── manifest.json         # Component metadata, version 1.0.0, cloud_polling
-├── const.py              # Constants, endpoints, default intervals, User-Agent
+├── const.py              # Constants, endpoints, default intervals, User-Agent, storage keys
 ├── coordinator.py        # DataUpdateCoordinator (14-day rolling window, asyncio.gather)
 ├── calendar.py           # CalendarEntity platform (Schedule, Planning, WeeklyMessages)
+├── todo.py               # TodoListEntity platform (Homework with Store persistence)
 ├── config_flow.py        # UI config flow & reauth modal
 ├── options_flow.py       # UI options flow (configurable polling intervals)
 ├── diagnostics.py        # Credential redaction and diagnostics exporter
 ├── strings.json          # Translation template strings
 ├── translations/
-│   ├── da.json           # Danish localization (Skema, Årsplan, Ugebreve)
+│   ├── da.json           # Danish localization (Skema, Årsplan, Ugebreve, Lektier)
 │   └── en.json           # English localization
-└── api/
+└── api/                  # Internal API client (HACS-only target, no PyPI extraction)
     ├── __init__.py       # Package exports
     ├── client.py         # Async HTTP client (JWT auto-refresh, stable device ID)
     ├── exceptions.py     # Custom exception hierarchy
@@ -37,6 +45,9 @@ tests/
 ├── test_api_client.py    # Unit tests for client, models, and parser
 └── test_integration.py   # Integration tests for coordinator, entities, and flows
 ```
+
+> [!NOTE]
+> **HACS-Only Architectural Decision**: This integration is maintained exclusively as a HACS custom integration and will not be submitted to Home Assistant Core. Consequently, the `custom_components/zenbi/api/` package remains structured directly within the integration directory. There is no requirement for PyPI extraction, enabling rapid iteration, zero third-party packaging overhead, and direct model cohesion.
 
 ### 1.2 Implemented Components
 
@@ -212,13 +223,31 @@ flowchart TD
 
 ---
 
-### Phase 4: Absence Reporting & Service Calls
-- [ ] **Reverse-Engineer Absence Endpoints**: Trace Zenbi web app endpoints for student absence registration ("Meld fravær / sygdom").
-- [ ] **Home Assistant Service Integration**: Implement `zenbi.report_absence` service call with date range and reason parameters.
+### Phase 4: Safe Operation, Lifecycle Management & Cleanup (Completed)
+- [x] **Lifecycle & Unloading**:
+  - Implemented `async_unload_entry` in `custom_components/zenbi/__init__.py` invoking `await coordinator.async_shutdown()` to cancel background timers and free resources.
+  - **Shared Session Preserved**: Does not close shared `aiohttp` session (`async_get_clientsession(hass)`), preventing crashes in other integrations.
+  - Implemented `async_remove_entry` for clean uninstallation.
+- [x] **Storage Integrity & Cleanup**:
+  - Integrated `homeassistant.helpers.storage.Store` to asynchronously persist completed homework IDs (`_completed_ids`) across reboots (`.storage/zenbi.<entry_id>`).
+  - Added `store.async_remove()` in `async_remove_entry` to permanently delete `.storage` files when uninstalled.
+  - Relies on Home Assistant Core's native cleanup for Entity Registry and Device Registry.
+  - Verified zero injection into `local_calendar` or `local_todo`.
+- [x] **Event Loop Safety & Throttling**:
+  - 100% asynchronous networking via `aiohttp`.
+  - Throttled state writes (`async_write_ha_state()`) limited to user action and scheduled coordinator polls.
+  - Exposed only next events in state machine to prevent `recorder` database bloat, serving date ranges on-demand via `async_get_events()`.
+- [x] **Automated Testing**:
+  - Added mock `Store` to `tests/conftest.py`.
+  - Added 4 new integration tests in `tests/test_integration.py` covering unload shutdown, shared session preservation, storage removal, and store persistence.
+  - Verified 100% pass rate (46/46 tests passing).
+
+---
 
 ### Phase 5: Notification Platform & Unread Messages
 - [ ] **Notifications Endpoint**: Implement real API calls for `/api/notification/...` replacing the placeholder in `client.py`.
 - [ ] **Sensor Platform**: Add sensor entity (`sensor.zenbi_unread_messages` / `sensor.zenbi_notifications`) tracking unread school notices.
 - [ ] **Attachment Download Links**: Investigate signed temporary URLs for homework attachments.
+
 
 

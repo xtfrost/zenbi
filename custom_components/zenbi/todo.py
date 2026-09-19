@@ -16,10 +16,11 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN
+from .const import DOMAIN, STORAGE_KEY_TODO, STORAGE_VERSION
 from .coordinator import ZenbiCalendarDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -57,6 +58,29 @@ class ZenbiHomeworkTodoListEntity(
         self._attr_translation_key = "homework"
         self._attr_unique_id = f"{entry.entry_id}_homework"
         self._completed_ids: Set[str] = set()
+        self._store: Optional[Store] = None
+        if hasattr(coordinator, "hass") and coordinator.hass:
+            self._store = Store(
+                coordinator.hass,
+                STORAGE_VERSION,
+                STORAGE_KEY_TODO.format(entry_id=entry.entry_id),
+            )
+
+    async def async_added_to_hass(self) -> None:
+        """Load saved completed IDs when entity is added to Home Assistant."""
+        await super().async_added_to_hass()
+        if self._store:
+            try:
+                data = await self._store.async_load()
+                if data and isinstance(data, dict) and isinstance(data.get("completed_ids"), list):
+                    self._completed_ids = set(data["completed_ids"])
+                    self.async_write_ha_state()
+            except Exception as err:
+                _LOGGER.warning(
+                    "Error loading persistent Zenbi homework state for %s: %s",
+                    getattr(self, "entity_id", None) or self._attr_unique_id,
+                    err,
+                )
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -167,4 +191,14 @@ class ZenbiHomeworkTodoListEntity(
         elif item.status == TodoItemStatus.NEEDS_ACTION:
             self._completed_ids.discard(item.uid)
         self.async_write_ha_state()
+
+        if self._store:
+            try:
+                await self._store.async_save({"completed_ids": list(self._completed_ids)})
+            except Exception as err:
+                _LOGGER.warning(
+                    "Error saving persistent Zenbi homework state for %s: %s",
+                    getattr(self, "entity_id", None) or self._attr_unique_id,
+                    err,
+                )
 

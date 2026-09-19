@@ -89,6 +89,12 @@ class ZenbiCalendarDataUpdateCoordinator(DataUpdateCoordinator[ZenbiCalendarData
         self.client = client
         self.entry = entry
 
+    async def async_shutdown(self) -> None:
+        """Cancel background update tasks and shut down coordinator."""
+        _LOGGER.debug("Shutting down Zenbi coordinator for %s", self.name)
+        if hasattr(super(), "async_shutdown"):
+            await super().async_shutdown()
+
     async def _async_update_data(self) -> ZenbiCalendarData:
         """Fetch data from Zenbi API for rolling two-week window concurrently."""
         now = dt_util.now()

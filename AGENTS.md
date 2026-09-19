@@ -20,6 +20,8 @@ Before marking any task as complete, you must:
 - [ ] Run automated tests via `pytest tests/ -v` and confirm they pass with zero errors.
 - [ ] Ensure translations are synchronized across `strings.json`, `da.json`, and `en.json`.
 - [ ] Verify that entity IDs, attributes, and translations strictly follow Home Assistant naming standards.
+- [ ] When implementing new service calls, ensure services.yaml is updated with strictly typed selectors.
+- [ ] When adding new features or entities, ensure the HACS info.md / README is updated to document them for end-users.
 
 ---
 
@@ -32,10 +34,16 @@ Before marking any task as complete, you must:
 
 ### Directory Layout
 ```text
+hacs.json                 # HACS integration metadata and minimum HA requirements
+info.md                   # HACS UI landing and information overview
+README.md                 # Full repository and integration documentation
+PLANNING.md               # Architectural roadmap and baseline tracking
+AGENTS.md                 # Operational guidelines and Definition of Done
+
 custom_components/zenbi/
-├── __init__.py           # Setup/unload lifecycle, reload listener
+├── __init__.py           # Setup/unload lifecycle, reload listener, async_remove_entry
 ├── manifest.json         # Integration metadata, requirements, HACS config
-├── const.py              # Constants, endpoints, intervals, User-Agent
+├── const.py              # Constants, endpoints, intervals, User-Agent, storage keys
 ├── coordinator.py        # DataUpdateCoordinator (14-day rolling window, asyncio.gather)
 ├── calendar.py           # CalendarEntity implementations
 ├── todo.py               # TodoListEntity implementation (homework)
@@ -44,7 +52,7 @@ custom_components/zenbi/
 ├── diagnostics.py        # Sensitive data redaction for HA diagnostics
 ├── strings.json          # Translation template source
 ├── translations/         # Localization files (da.json, en.json)
-└── api/
+└── api/                  # Internal API client (HACS-only target, no PyPI extraction)
     ├── __init__.py       # Package exports
     ├── client.py         # Async HTTP client (JWT auto-refresh, stable device ID)
     ├── exceptions.py     # ZenbiApiError, ZenbiAuthError, ZenbiConnectionError

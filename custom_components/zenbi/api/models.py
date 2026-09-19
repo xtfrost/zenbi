@@ -113,7 +113,6 @@ class ZenbiPlanningMeta:
     element_id: Optional[str] = None
     color: Optional[str] = None
     icon: Optional[str] = None
-    as_absence: bool = False
     worktime: bool = False
 
     @classmethod
@@ -124,7 +123,6 @@ class ZenbiPlanningMeta:
             element_id=data.get("elementId"),
             color=data.get("color"),
             icon=data.get("icon"),
-            as_absence=data.get("asAbsence", False),
             worktime=data.get("worktime", False),
         )
 

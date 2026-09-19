@@ -32,3 +32,7 @@ ENDPOINT_WEEKLY_SCHEDULES = "/api/homework/api/v1/weeklyschedules/relations"
 
 # Platforms
 PLATFORMS = ["calendar", "todo"]
+
+# Storage constants
+STORAGE_VERSION = 1
+STORAGE_KEY_TODO = f"{DOMAIN}.{{entry_id}}"
