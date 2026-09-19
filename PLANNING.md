@@ -24,6 +24,7 @@ custom_components/zenbi/
 ├── coordinator.py        # DataUpdateCoordinator (14-day rolling window, asyncio.gather)
 ├── calendar.py           # CalendarEntity platform (Schedule, Planning, WeeklyMessages)
 ├── todo.py               # TodoListEntity platform (Homework with Store persistence)
+├── sensor.py             # Sensor platform (Weekly plan markdown sensor per student)
 ├── config_flow.py        # UI config flow & reauth modal
 ├── options_flow.py       # UI options flow (configurable polling intervals)
 ├── diagnostics.py        # Credential redaction and diagnostics exporter
@@ -244,10 +245,56 @@ flowchart TD
 
 ---
 
-### Phase 5: Notification Platform & Unread Messages
+### Phase 5: Multi-Student Architecture & Weekly Plan Dashboard Sensor (Completed)
+- [x] **Multi-Student Device & Entity Partitioning**:
+  - Automatically segment discovered students (`coordinator.data.students`) into dedicated Home Assistant devices:
+    - **Student Device** (`Zenbi ({student_name})`): Contains that student's Schedule Calendar (`schedule`), Homework Todo List (`homework`), and Weekly Plan Sensor (`weekly_plan`).
+    - **School Device** (`Zenbi (School)`): Contains school-wide Planning Calendar (`planning`), school-wide Weekly Messages Calendar (`weekly_messages`), and any unassigned schedule events.
+    - **Consistent Model**: Architecture remains uniform whether 1 or multiple students are enrolled.
+- [x] **Strict Student Filtering**:
+  - Filter `ZenbiCalendarItem` and correlated `ZenbiHomework` strictly by `student in item.student_names`.
+  - Unassigned / general events route to the shared School device.
+- [x] **Dedicated Weekly Plan Sensor Platform (`sensor.py`)**:
+  - Implement `ZenbiWeeklyPlanSensor(CoordinatorEntity, SensorEntity)`.
+  - State: Week number or message title (e.g. `Uge 39 - Dansk tema`), capped at 255 characters.
+  - Smart active-week grouping across concurrent schedules; body merging with headers `# Title` and dividers `---`.
+  - Extra state attributes: `current_week_plan` (clean parsed Markdown of active week), `next_week_plan` (clean parsed Markdown of upcoming week), `files` (aggregated attachment list), `start_date`, `end_date`.
+  - Perfect for native Lovelace Markdown cards: `{{ state_attr('sensor.zenbi_albert_weekly_plan', 'current_week_plan') }}`.
+- [x] **Multi-Student Todo Storage**:
+  - Updated `todo.py` storage schema to persist `_completed_ids` per student list in `.storage/zenbi.<entry_id>`.
+- [x] **Platform & Localization Updates**:
+  - Added `"sensor"` to `const.PLATFORMS`.
+  - Synchronized translation keys in `strings.json`, `da.json`, and `en.json` for `weekly_plan`.
+  - Updated `info.md` and `README.md` with multi-student architecture and Markdown card examples.
+- [x] **Automated Testing**:
+  - Added `homeassistant.components.sensor` shims to `tests/conftest.py`.
+  - Added unit and integration tests verifying multi-student entity separation, strict filtering, and sensor attributes (55/55 passing).
+
+---
+
+### Phase 6: On-Demand File Download Proxy View (Completed)
+- [x] **API Endpoint Client Integration**:
+  - Implemented `get_weekly_schedule_file_download_url(file_id: str)` in `ZenbiApiClient` querying `/api/homework/api/v1/weeklyschedule/filedownload?id={file_id}`.
+  - Returns fresh ephemeral Azure Blob SAS URL.
+- [x] **Home Assistant HTTP View (`http.py`)**:
+  - Created `ZenbiFileDownloadView(HomeAssistantView)` registered at `/api/zenbi/file/{entry_id}/{file_id}`.
+  - On request, looks up coordinator for `entry_id`, fetches fresh SAS URL via API client, and redirects (`HTTP 302 Found`).
+  - Protected via unguessable entry/file UUIDs (`requires_auth = False`) to support companion apps, wall tablets, and web views without bearer token issues.
+- [x] **Entity Presentation Updates**:
+  - In `sensor.py`, embeds clickable Markdown links `[File Name](/api/zenbi/file/{entry_id}/{file_id})` in `current_week_plan`.
+  - In `extra_state_attributes["files"]`, outputs structured dicts `{"name": str, "id": str, "url": str}`.
+  - In `calendar.py` and `todo.py`, attaches proxy download links where file IDs are present.
+- [x] **CLI & Automated Verification**:
+  - Updated `scripts/test_live.py` with file download preview and live verification test.
+  - Added `homeassistant.components.http` mock shims to `tests/conftest.py`.
+  - Added unit and integration tests for API client and HTTP view (58/58 passing).
+
+---
+
+### Phase 7: Notification Platform & Unread Messages (Deferred)
 - [ ] **Notifications Endpoint**: Implement real API calls for `/api/notification/...` replacing the placeholder in `client.py`.
-- [ ] **Sensor Platform**: Add sensor entity (`sensor.zenbi_unread_messages` / `sensor.zenbi_notifications`) tracking unread school notices.
-- [ ] **Attachment Download Links**: Investigate signed temporary URLs for homework attachments.
+- [ ] **Multi-Parent Targeting**: Design notification delivery to handle distinct parent accounts and notification channels.
+- [ ] **Sensor / Binary Sensor**: Add `binary_sensor.zenbi_unread_messages` tracking unread notices.
 
 
 

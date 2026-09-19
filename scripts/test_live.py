@@ -35,6 +35,8 @@ from custom_components.zenbi.api.exceptions import (
     ZenbiAuthError,
     ZenbiConnectionError,
 )
+from custom_components.zenbi.api.models import extract_student_names
+from custom_components.zenbi.const import slugify_name
 
 SESSION_FILE = REPO_ROOT / ".zenbi_session.json"
 
@@ -85,6 +87,201 @@ def calculate_two_week_window():
         hour=0, minute=0, second=0, microsecond=0
     )
     return start_of_week, end_of_window
+
+
+def _format_weekly_plan_text(schedules: list, entry_id: str = "entry_id") -> str:
+    """Format plan text, merging multiple messages or listing attachments if text is empty."""
+    with_desc = [s for s in schedules if s.description and s.description.strip()]
+
+    file_links = []
+    seen_keys = set()
+    for s in schedules:
+        if s.files:
+            for f in s.files:
+                if isinstance(f, dict):
+                    f_id = f.get("id") or f.get("fileId")
+                    name = f.get("name") or f.get("title") or "Vedhæftet fil"
+                    key = f_id or name
+                    if key not in seen_keys:
+                        seen_keys.add(key)
+                        if f_id:
+                            file_links.append(f"[{name}](/api/zenbi/file/{entry_id}/{f_id})")
+                        else:
+                            file_links.append(name)
+
+    main_text = ""
+    if len(with_desc) == 1:
+        main_text = with_desc[0].description.strip()
+    elif len(with_desc) > 1:
+        sections: list[str] = []
+        for s in with_desc:
+            title = s.title or "Ugeplan"
+            sections.append(f"# {title}\n\n{s.description.strip()}")
+        main_text = "\n\n---\n\n".join(sections)
+
+    if main_text:
+        if file_links:
+            file_list = "\n".join(f"- {link}" for link in file_links)
+            return f"{main_text}\n\n### Vedhæftede filer\n{file_list}"
+        return main_text
+
+    # No messages have descriptions -> list files if any exist
+    if file_links:
+        file_list = "\n".join(f"- {link}" for link in file_links)
+        return f"*Vedhæftede filer til denne uge:*\n{file_list}"
+
+    return ""
+
+
+def _get_schedule_dates(schedule) -> tuple[datetime.date | None, datetime.date | None]:
+    start_d = None
+    end_d = None
+    if schedule.start_dt:
+        start_d = schedule.start_dt.date()
+    elif schedule.start:
+        try:
+            start_d = datetime.fromisoformat(schedule.start).date()
+        except Exception:
+            pass
+    if schedule.end_dt:
+        end_d = schedule.end_dt.date()
+    elif schedule.end:
+        try:
+            end_d = datetime.fromisoformat(schedule.end).date()
+        except Exception:
+            pass
+    return start_d, end_d
+
+
+def _get_active_and_next_groups(schedules: list) -> tuple[list, list]:
+    """Return all schedules grouped into the active week and next week."""
+    if not schedules:
+        return [], []
+
+    def _sort_key(s) -> datetime:
+        if s.start_dt:
+            return s.start_dt
+        if s.start:
+            try:
+                return datetime.fromisoformat(s.start)
+            except Exception:
+                pass
+        return datetime.min.replace(tzinfo=timezone.utc)
+
+    sorted_schedules = sorted(schedules, key=_sort_key)
+    cph_tz = get_copenhagen_tz()
+    today = datetime.now(cph_tz).date()
+
+    # 1. Identify active week window
+    active_window_start = None
+    active_window_end = None
+
+    for s in sorted_schedules:
+        start_d, end_d = _get_schedule_dates(s)
+        if start_d and end_d and start_d <= today <= end_d:
+            active_window_start = start_d
+            active_window_end = end_d
+            break
+
+    # If no schedule strictly covers today, pick the earliest upcoming
+    if not active_window_start:
+        for s in sorted_schedules:
+            start_d, end_d = _get_schedule_dates(s)
+            if start_d and start_d >= today:
+                active_window_start = start_d
+                active_window_end = end_d
+                break
+
+    # Fallback to latest schedule if all are in the past
+    if not active_window_start and sorted_schedules:
+        active_window_start, active_window_end = _get_schedule_dates(sorted_schedules[-1])
+
+    active_schedules: list = []
+    next_schedules: list = []
+    next_window_start = None
+
+    for s in sorted_schedules:
+        start_d, end_d = _get_schedule_dates(s)
+        if active_window_start and start_d == active_window_start:
+            active_schedules.append(s)
+        elif active_window_start and start_d and start_d > active_window_start:
+            if next_window_start is None:
+                next_window_start = start_d
+            if start_d == next_window_start:
+                next_schedules.append(s)
+
+    return active_schedules, next_schedules
+
+
+def print_weekly_plan_sensor_preview(
+    entity_id: str,
+    unique_id: str,
+    weekly_schedules: list,
+    entry_id: str = "entry_id",
+) -> None:
+    """Print Home Assistant preview for a weekly plan sensor."""
+    print(f"\n  * ENTITY: {entity_id}")
+    print("    Name         : Weekly Plan (Ugeplan)")
+    print(f"    Unique ID    : {unique_id}")
+    if not weekly_schedules:
+        print("    State        : None (No weekly messages published)")
+        return
+
+    active_schedules, next_schedules = _get_active_and_next_groups(weekly_schedules)
+    if not active_schedules:
+        print("    State        : None (No active weekly schedule found)")
+        return
+
+    with_desc = [s for s in active_schedules if s.description and s.description.strip()]
+    primary = with_desc[0] if with_desc else active_schedules[0]
+    title = primary.title or "Weekly Plan"
+    if len(active_schedules) > 1:
+        title = f"{title} (+{len(active_schedules) - 1} mere)"
+
+    print(f'    State        : "{title}"')
+
+    plan_text = _format_weekly_plan_text(active_schedules, entry_id=entry_id)
+    print("    Attribute 'current_week_plan':")
+    if plan_text:
+        lines = plan_text.splitlines()
+        for line in lines[:10]:
+            print(f"      | {line}")
+        if len(lines) > 10:
+            print(f"      | ... ({len(lines) - 10} more lines)")
+    else:
+        print("      | (empty)")
+
+    files: list[dict] = []
+    seen_keys = set()
+    for s in active_schedules:
+        if s.files:
+            for f in s.files:
+                if isinstance(f, dict):
+                    f_id = f.get("id") or f.get("fileId")
+                    name = f.get("name") or f.get("title")
+                    key = f_id or name
+                    if key and key not in seen_keys:
+                        seen_keys.add(key)
+                        item = {"name": name}
+                        if f_id:
+                            item["id"] = f_id
+                            item["url"] = f"/api/zenbi/file/{entry_id}/{f_id}"
+                        files.append(item)
+    if files:
+        print(f"    Attribute 'files': {files}")
+
+    if next_schedules:
+        with_desc_next = [s for s in next_schedules if s.description and s.description.strip()]
+        primary_next = with_desc_next[0] if with_desc_next else next_schedules[0]
+        nxt_title = primary_next.title or "Weekly Plan"
+        print(f"    Attribute 'next_week_plan': (Title: {nxt_title})")
+        nxt_plan_text = _format_weekly_plan_text(next_schedules, entry_id=entry_id)
+        if nxt_plan_text:
+            lines = nxt_plan_text.splitlines()
+            for line in lines[:4]:
+                print(f"      | {line}")
+            if len(lines) > 4:
+                print(f"      | ... ({len(lines) - 4} more lines)")
 
 
 async def test_zenbi(
@@ -221,6 +418,17 @@ async def test_zenbi(
             if ws.files:
                 f_names = [f.get('name') or f.get('title') for f in ws.files if isinstance(f, dict)]
                 print(f"          Attachments: {', '.join(filter(None, f_names))}")
+                first_file = next(
+                    (f for f in ws.files if isinstance(f, dict) and (f.get("id") or f.get("fileId"))),
+                    None,
+                )
+                if first_file and idx == 1:
+                    test_fid = first_file.get("id") or first_file.get("fileId")
+                    try:
+                        dl_url = await client.get_weekly_schedule_file_download_url(test_fid)
+                        print(f"          [OK] Verified File Download SAS URL: {dl_url[:75]}...")
+                    except Exception as err:
+                        print(f"          [!] File download test failed: {err}")
 
         # 6. Planning labels
         print("\n[6/6] Fetching Planning labels (all-day events)...")
@@ -235,6 +443,168 @@ async def test_zenbi(
             print(f"      [{idx}] {date_info}: {label.title}")
             if label.description:
                 print(f"          Description: {label.description}")
+
+        # 7. Home Assistant Device & Entity Preview (Phase 5 Architecture)
+        print("\n" + "=" * 60)
+        print("HOME ASSISTANT DEVICE & ENTITY PREVIEW")
+        print("=" * 60)
+
+        students = extract_student_names(items)
+        cal_by_id = {item.id: item for item in items}
+
+        if not students:
+            print("\n  [!] No students explicitly tagged in timetable participant models.")
+            print("      Home Assistant will provision generic entities (no username in names/IDs).")
+
+            print("\n" + "-" * 60)
+            print("DEVICE: Zenbi")
+            print("  Identifier : ('zenbi', 'entry_id')")
+            print("  Role       : General Device")
+            print("-" * 60)
+
+            # 1. Schedule Calendar
+            print("\n  * ENTITY: calendar.zenbi_schedule")
+            print("    Name         : Schedule (Skema)")
+            print("    Unique ID    : entry_id_schedule")
+            print(f"    Classes      : {len(items)} class(es) in rolling 2-week window")
+            for c_idx, c_item in enumerate(items[:5], start=1):
+                hw_count = len(c_item.homework) if c_item.homework else 0
+                hw_note = f" [has {hw_count} homework]" if hw_count else ""
+                print(f"      - {c_item.start[:16]} to {c_item.end[11:16]} : {c_item.title}{hw_note}")
+            if len(items) > 5:
+                print(f"      ... and {len(items) - 5} more classes")
+
+            # 2. Homework Todo List
+            print("\n  * ENTITY: todo.zenbi_homework")
+            print("    Name         : Homework (Lektier)")
+            print("    Unique ID    : entry_id_homework")
+            print(f"    Assignments  : {len(homeworks)} task(s)")
+            for h_idx, hw in enumerate(homeworks, start=1):
+                cal_it = cal_by_id.get(hw.calendar_item_id)
+                subj = cal_it.title if cal_it else "Homework"
+                first_line = hw.description.splitlines()[0][:60] if hw.description else ""
+                summary = f"{subj}: {first_line}" if first_line else subj
+                print(f"      [{h_idx}] {summary} (Due: {hw.date or 'No date'})")
+                if hw.description:
+                    desc_lines = [l for l in hw.description.splitlines() if l.strip()][:3]
+                    for dl in desc_lines:
+                        print(f"          {dl}")
+                if hw.files:
+                    f_names = [f.get('name') or f.get('title') for f in hw.files if isinstance(f, dict)]
+                    print(f"          Files: {', '.join(filter(None, f_names))}")
+
+            # 3. Weekly Plan Sensor
+            print_weekly_plan_sensor_preview(
+                "sensor.zenbi_weekly_plan",
+                "entry_id_weekly_plan",
+                weekly_schedules,
+            )
+
+            # 4. Planning Calendar
+            print("\n  * ENTITY: calendar.zenbi_planning")
+            print("    Name         : Planning (Årsplan)")
+            print("    Unique ID    : entry_id_planning")
+            print(f"    Labels       : {len(labels)} milestone(s)/holiday(s)")
+            for l_idx, lbl in enumerate(labels[:5], start=1):
+                print(f"      - {lbl.start_date} to {lbl.end_date or lbl.start_date}: {lbl.title}")
+            if len(labels) > 5:
+                print(f"      ... and {len(labels) - 5} more labels")
+
+            # 5. Weekly Messages Calendar
+            print("\n  * ENTITY: calendar.zenbi_weekly_messages")
+            print("    Name         : Weekly Messages (Ugebreve)")
+            print("    Unique ID    : entry_id_weekly_messages")
+            print(f"    Messages     : {len(weekly_schedules)} weekly letter(s)")
+            for w_idx, ws in enumerate(weekly_schedules[:3], start=1):
+                print(f"      - {ws.start} to {ws.end}: {ws.title}")
+
+        else:
+            print(f"\n  [+] Discovered {len(students)} student(s): {', '.join(students)}")
+
+            for s_idx, student in enumerate(students, start=1):
+                slug = slugify_name(student)
+                print("\n" + "-" * 60)
+                print(f"DEVICE: Zenbi ({student})")
+                print(f"  Identifier : ('zenbi', 'entry_id_{slug}')")
+                print(f"  Role       : Student Device")
+                print("-" * 60)
+
+                # 1. Schedule Calendar
+                student_items = [it for it in items if student in it.student_names]
+                print(f"\n  * ENTITY: calendar.zenbi_{slug}_schedule")
+                print("    Name         : Schedule (Skema)")
+                print(f"    Unique ID    : entry_id_{slug}_schedule")
+                print(f"    Classes      : {len(student_items)} class(es) in rolling 2-week window")
+                for c_idx, c_item in enumerate(student_items[:5], start=1):
+                    hw_count = len(c_item.homework) if c_item.homework else 0
+                    hw_note = f" [has {hw_count} homework]" if hw_count else ""
+                    print(f"      - {c_item.start[:16]} to {c_item.end[11:16]} : {c_item.title}{hw_note}")
+                if len(student_items) > 5:
+                    print(f"      ... and {len(student_items) - 5} more classes")
+
+                # 2. Homework Todo List
+                student_hws = []
+                for hw in homeworks:
+                    cal_it = cal_by_id.get(hw.calendar_item_id)
+                    if cal_it and student in cal_it.student_names:
+                        student_hws.append((hw, cal_it))
+
+                print(f"\n  * ENTITY: todo.zenbi_{slug}_homework")
+                print("    Name         : Homework (Lektier)")
+                print(f"    Unique ID    : entry_id_{slug}_homework")
+                print(f"    Assignments  : {len(student_hws)} task(s)")
+                for h_idx, (hw, cal_it) in enumerate(student_hws, start=1):
+                    subj = cal_it.title if cal_it else "Homework"
+                    first_line = hw.description.splitlines()[0][:60] if hw.description else ""
+                    summary = f"{subj}: {first_line}" if first_line else subj
+                    print(f"      [{h_idx}] {summary} (Due: {hw.date or 'No date'})")
+                    if hw.description:
+                        desc_lines = [l for l in hw.description.splitlines() if l.strip()][:3]
+                        for dl in desc_lines:
+                            print(f"          {dl}")
+                    if hw.files:
+                        f_names = [f.get('name') or f.get('title') for f in hw.files if isinstance(f, dict)]
+                        print(f"          Files: {', '.join(filter(None, f_names))}")
+
+                # 3. Weekly Plan Sensor
+                print_weekly_plan_sensor_preview(
+                    f"sensor.zenbi_{slug}_weekly_plan",
+                    f"entry_id_{slug}_weekly_plan",
+                    weekly_schedules,
+                )
+
+            # Shared School Device
+            print("\n" + "-" * 60)
+            print("DEVICE: Zenbi (School)")
+            print("  Identifier : ('zenbi', 'entry_id_school')")
+            print("  Role       : Shared School Device")
+            print("-" * 60)
+
+            # 1. Planning Calendar
+            print("\n  * ENTITY: calendar.zenbi_planning")
+            print("    Name         : Planning (Årsplan)")
+            print("    Unique ID    : entry_id_planning")
+            print(f"    Labels       : {len(labels)} milestone(s)/holiday(s)")
+            for l_idx, lbl in enumerate(labels[:5], start=1):
+                print(f"      - {lbl.start_date} to {lbl.end_date or lbl.start_date}: {lbl.title}")
+            if len(labels) > 5:
+                print(f"      ... and {len(labels) - 5} more labels")
+
+            # 2. Weekly Messages Calendar
+            print("\n  * ENTITY: calendar.zenbi_weekly_messages")
+            print("    Name         : Weekly Messages (Ugebreve)")
+            print("    Unique ID    : entry_id_weekly_messages")
+            print(f"    Messages     : {len(weekly_schedules)} weekly letter(s)")
+            for w_idx, ws in enumerate(weekly_schedules[:3], start=1):
+                print(f"      - {ws.start} to {ws.end}: {ws.title}")
+
+            # 3. Unassigned classes (if any)
+            unassigned_items = [it for it in items if not it.student_names]
+            if unassigned_items:
+                print(f"\n  * ENTITY: calendar.zenbi_school_schedule")
+                print("    Name         : School Schedule (Fællesskema)")
+                print("    Unique ID    : entry_id_school_schedule")
+                print(f"    Classes      : {len(unassigned_items)} unassigned / school-wide class(es)")
 
         print("\n" + "=" * 60)
         print("ALL CHECKS PASSED: Your Zenbi credentials and API endpoints are working!")

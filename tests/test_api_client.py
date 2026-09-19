@@ -563,3 +563,36 @@ def test_extract_student_names():
     unique_names = extract_student_names([item1, item2])
     assert unique_names == ["Albert Hansen", "Ida Hansen", "Carl Hansen"]
 
+
+@pytest.mark.asyncio
+async def test_get_weekly_schedule_file_download_url():
+    """Test fetching Azure Blob SAS download URL for attachment files."""
+    mock_session = MagicMock(spec=aiohttp.ClientSession)
+    mock_session.closed = False
+    client = ZenbiApiClient("user", "pass", session=mock_session)
+    client._token = "valid_token"
+    client._token_expiry = time.time() + 3600
+
+    mock_resp = AsyncMock()
+    mock_resp.status = 200
+    mock_resp.json = AsyncMock(
+        return_value={
+            "uri": "https://zenbistore.blob.core.windows.net/test/file.png?sas=token",
+            "name": "file.png",
+        }
+    )
+    mock_session.request.return_value.__aenter__.return_value = mock_resp
+
+    url = await client.get_weekly_schedule_file_download_url("file-123")
+    assert url == "https://zenbistore.blob.core.windows.net/test/file.png?sas=token"
+
+    # Missing file_id
+    with pytest.raises(ZenbiApiError, match="Missing file ID"):
+        await client.get_weekly_schedule_file_download_url("")
+
+    # No URI returned
+    mock_resp.json = AsyncMock(return_value={"name": "file.png"})
+    with pytest.raises(ZenbiApiError, match="No download URI returned"):
+        await client.get_weekly_schedule_file_download_url("file-456")
+
+

@@ -89,17 +89,36 @@ To adjust update intervals:
 
 ---
 
+## Multi-Student Architecture
+
+When an account is connected, Zenbi automatically discovers all enrolled children and provisions dedicated devices:
+- **Student Device (`Zenbi ({Student Name})`)**: Contains that student's Schedule Calendar, Homework Todo List, and Weekly Plan Markdown Sensor.
+- **School Device (`Zenbi (School)`)**: Contains the school-wide Planning Calendar (holidays/terms), full Weekly Messages Archive Calendar, and any unassigned events.
+
+---
+
 ## Entities Provided
 
-| Entity ID | Default Name (DA / EN) | Enabled Default | Description |
+| Entity ID | Default Name (DA / EN) | Device | Description |
 | :--- | :--- | :--- | :--- |
-| `calendar.zenbi_schedule` | Skema / Schedule | **Yes** (if classes exist) | Timed school timetable, subjects, classroom resources, substitutes, and homework. |
-| `calendar.zenbi_weekly_messages` | Ugebreve / Weekly Messages | **Yes** (if letters exist) | 7-day all-day events containing weekly teacher letters and attachment lists. |
-| `calendar.zenbi_planning` | Årsplan / Planning | **No** (if school has 0 labels) | All-day school semester milestones and holidays. |
-| `todo.zenbi_homework` | Lektier / Homework | **Yes** | Dedicated checklist of homework tasks with due dates, previews, and completion toggles. |
+| `calendar.zenbi_{student}_schedule` | Skema / Schedule | Student | Timed school timetable, subjects, classroom resources, substitutes, and homework. |
+| `todo.zenbi_{student}_homework` | Lektier / Homework | Student | Dedicated checklist of homework tasks with due dates, previews, and completion toggles. |
+| `sensor.zenbi_{student}_weekly_plan` | Ugeplan / Weekly Plan | Student | Active weekly plan with formatted Markdown text attributes for Lovelace cards. |
+| `calendar.zenbi_planning` | Årsplan / Planning | School | All-day school semester milestones, term dates, and holidays. |
+| `calendar.zenbi_weekly_messages` | Ugebreve / Weekly Messages | School | 7-day all-day events containing weekly teacher letters and attachment lists. |
 
-> [!TIP]
-> If your school starts using the annual planning module later, you can enable `calendar.zenbi_planning` at any time under **Settings** > **Entities**.
+### Dashboard Markdown Card Example
+
+Display your child's weekly plan directly on a Lovelace dashboard:
+
+```yaml
+type: markdown
+title: Ugeplan for Albert
+content: '{{ state_attr("sensor.zenbi_albert_hansen_weekly_plan", "current_week_plan") }}'
+```
+
+### On-Demand Attachment Downloads
+Zenbi attachment files (e.g. SFO calendars, classroom handouts, homework files) are served via an on-demand proxy endpoint (`/api/zenbi/file/{entry_id}/{file_id}`). When clicked from dashboard cards, Home Assistant automatically generates a fresh Azure Blob SAS token and redirects to the download, ensuring attachment links never expire.
 
 ---
 

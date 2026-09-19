@@ -21,6 +21,7 @@ from ..const import (
     ENDPOINT_HOMEWORKS,
     ENDPOINT_PLANNING_LABELS,
     ENDPOINT_WEEKLY_SCHEDULES,
+    ENDPOINT_WEEKLY_SCHEDULE_FILE_DOWNLOAD,
     TWO_FACTOR_NULL_GUID,
 )
 from .exceptions import ZenbiApiError, ZenbiAuthError, ZenbiConnectionError
@@ -130,6 +131,11 @@ class ZenbiApiClient:
     def _get_session(self) -> aiohttp.ClientSession:
         """Get active ClientSession, creating one if owned and closed."""
         if self._session is None or self._session.closed:
+            if not self._owns_session:
+                _LOGGER.warning(
+                    "Shared aiohttp session was closed unexpectedly. "
+                    "Creating a new owned session."
+                )
             self._session = aiohttp.ClientSession()
             self._owns_session = True
         return self._session
@@ -359,6 +365,21 @@ class ZenbiApiClient:
                     break
 
         return [ZenbiWeeklySchedule.from_dict(item) for item in items_raw]
+
+    async def get_weekly_schedule_file_download_url(self, file_id: str) -> str:
+        """Fetch fresh Azure Blob SAS download URL for an attachment file."""
+        if not file_id:
+            raise ZenbiApiError("Missing file ID")
+
+        data = await self._request(
+            "GET",
+            ENDPOINT_WEEKLY_SCHEDULE_FILE_DOWNLOAD,
+            params={"id": file_id},
+        )
+        if not isinstance(data, dict) or not data.get("uri"):
+            raise ZenbiApiError(f"No download URI returned for file ID {file_id}")
+
+        return str(data["uri"])
 
     async def close(self) -> None:
         """Close client session if owned by this client."""

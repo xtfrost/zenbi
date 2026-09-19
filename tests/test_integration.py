@@ -36,7 +36,13 @@ from custom_components.zenbi.todo import (
     ZenbiHomeworkTodoListEntity,
     async_setup_entry as async_setup_todo_entry,
 )
+from custom_components.zenbi.sensor import (
+    ZenbiWeeklyPlanSensor,
+    async_setup_entry as async_setup_sensor_entry,
+)
+from custom_components.zenbi.http import ZenbiFileDownloadView
 from homeassistant.components.todo import TodoItem, TodoItemStatus
+from homeassistant.util import dt as dt_util
 from custom_components.zenbi.config_flow import ZenbiConfigFlow
 from custom_components.zenbi.const import (
     CONF_CALENDAR_SYNC_INTERVAL_HOURS,
@@ -55,7 +61,7 @@ from custom_components.zenbi.coordinator import (
     ZenbiCalendarDataUpdateCoordinator,
 )
 from custom_components.zenbi.options_flow import ZenbiOptionsFlowHandler
-from tests.conftest import MockConfigEntry, MockHomeAssistant, MockStore, UpdateFailed
+from tests.conftest import ConfigEntryAuthFailed, MockConfigEntry, MockHomeAssistant, MockStore, UpdateFailed
 
 
 @pytest.fixture
@@ -134,11 +140,11 @@ async def test_coordinator_update_success(mock_hass, mock_config_entry, mock_cli
 
 @pytest.mark.asyncio
 async def test_coordinator_update_failure(mock_hass, mock_config_entry, mock_client):
-    """Test coordinator handles API failure with UpdateFailed."""
+    """Test coordinator raises ConfigEntryAuthFailed (not UpdateFailed) on auth error so HA triggers the reauth UI."""
     mock_client.get_calendar_items.side_effect = ZenbiAuthError("Auth failed")
 
     coordinator = ZenbiCalendarDataUpdateCoordinator(mock_hass, mock_client, mock_config_entry)
-    with pytest.raises(UpdateFailed):
+    with pytest.raises(ConfigEntryAuthFailed):
         await coordinator._async_update_data()
 
 
@@ -238,11 +244,12 @@ async def test_calendar_schedule_entity(mock_hass, mock_config_entry, mock_clien
     assert "Read essay pages 10-15" in next_event.description
     assert "essay_notes.pdf" in next_event.description
 
-    # extra_state_attributes
+    # extra_state_attributes — files are now flattened to name strings (not raw dicts)
     attrs = entity.extra_state_attributes
     assert "homework" in attrs
     assert len(attrs["homework"]) == 1
     assert attrs["homework"][0]["description"] == "Read essay pages 10-15"
+    assert attrs["homework"][0]["files"] == ["essay_notes.pdf"]
 
     # async_get_events within window
     events = await entity.async_get_events(
@@ -436,10 +443,10 @@ async def test_entry_setup_and_unload(mock_hass, mock_config_entry):
 
 @pytest.mark.asyncio
 async def test_entity_registry_enabled_default(mock_hass, mock_config_entry, mock_client):
-    """Test calendar entities enabled_default reflects data presence."""
+    """Test all calendar entities are enabled by default (hardcoded True)."""
     coordinator = ZenbiCalendarDataUpdateCoordinator(mock_hass, mock_client, mock_config_entry)
 
-    # 1. When all data lists are empty
+    # With empty data
     coordinator.data = ZenbiCalendarData(
         calendar_items=[],
         planning_labels=[],
@@ -454,19 +461,20 @@ async def test_entity_registry_enabled_default(mock_hass, mock_config_entry, moc
     assert plan_ent.translation_key == "planning"
     assert wm_ent.translation_key == "weekly_messages"
 
-    assert sched_ent.entity_registry_enabled_default is False
-    assert plan_ent.entity_registry_enabled_default is False
-    assert wm_ent.entity_registry_enabled_default is False
+    # All entities are always enabled by default — user can disable unused ones manually.
+    assert sched_ent.entity_registry_enabled_default is True
+    assert plan_ent.entity_registry_enabled_default is True
+    assert wm_ent.entity_registry_enabled_default is True
 
-    # 2. When data is populated
+    # Still True with populated data
     coordinator.data = ZenbiCalendarData(
         calendar_items=[ZenbiCalendarItem(id="c1", title="Math", start="", end="")],
-        planning_labels=[],  # School has no planning labels
+        planning_labels=[],
         weekly_schedules=[ZenbiWeeklySchedule(id="w1", start="", end="", description="", raw_description="", title="Plan")],
     )
 
     assert sched_ent.entity_registry_enabled_default is True
-    assert plan_ent.entity_registry_enabled_default is False
+    assert plan_ent.entity_registry_enabled_default is True
     assert wm_ent.entity_registry_enabled_default is True
 
 
@@ -717,9 +725,14 @@ async def test_todo_entity_empty_and_fallback(mock_hass, mock_config_entry, mock
     entity = ZenbiHomeworkTodoListEntity(coordinator, mock_config_entry)
     assert await entity.async_get_todo_items() == []
 
-    # 2. Multi-student device name fallback to entry title
+    # 2. Multi-student unassigned device name is Zenbi (School), 0 students is Zenbi (never username)
     coordinator.data = ZenbiCalendarData(students=["Albert", "Ida"])
-    assert entity.device_info.name == "Zenbi (student@school.dk)"
+    entity._handle_coordinator_update()
+    assert entity.device_info.name == "Zenbi (School)"
+
+    coordinator.data = ZenbiCalendarData(students=[])
+    entity._handle_coordinator_update()
+    assert entity.device_info.name == "Zenbi"
 
     # 3. Homework with no calendar item and no date (uses fallback date from calendar item if present or None)
     hw_no_cal = ZenbiHomework(
@@ -859,7 +872,491 @@ async def test_todo_entity_store_load_error_handling(mock_hass, mock_config_entr
     assert len(items) == 1
     assert items[0].status == TodoItemStatus.NEEDS_ACTION
 
+@pytest.mark.asyncio
+async def test_coordinator_auth_error_secondary_endpoints(mock_hass, mock_config_entry, mock_client):
+    """Test that ZenbiAuthError from secondary endpoints also raises ConfigEntryAuthFailed.
+
+    Prevents silent data loss where expired credentials would return empty todo lists
+    instead of triggering the HA reauth UI.
+    """
+    # Calendar succeeds; homework returns auth error
+    item = ZenbiCalendarItem(id="cal-1", title="Biology", start="2026-09-21T08:00:00+02:00", end="2026-09-21T09:00:00+02:00")
+    mock_client.get_calendar_items.return_value = [item]
+    mock_client.get_homework.side_effect = ZenbiAuthError("Token expired")
+    mock_client.get_weekly_schedules.return_value = []
+    mock_client.get_planning_labels.return_value = []
+
+    coordinator = ZenbiCalendarDataUpdateCoordinator(mock_hass, mock_client, mock_config_entry)
+    with pytest.raises(ConfigEntryAuthFailed):
+        await coordinator._async_update_data()
 
 
+@pytest.mark.asyncio
+async def test_unload_order_shutdown_before_platforms(mock_hass, mock_config_entry):
+    """Test that coordinator.async_shutdown fires before async_unload_platforms.
+
+    Ensures an in-flight coordinator refresh cannot race entity removal during unload.
+    """
+    call_order = []
+
+    with patch("custom_components.zenbi.ZenbiApiClient"), patch(
+        "custom_components.zenbi.ZenbiCalendarDataUpdateCoordinator.async_config_entry_first_refresh"
+    ):
+        mock_hass.config_entries.async_forward_entry_setups = AsyncMock(return_value=True)
+        await async_setup_entry(mock_hass, mock_config_entry)
+
+    coordinator = mock_hass.data["zenbi"][mock_config_entry.entry_id]
+
+    async def mock_shutdown():
+        call_order.append("shutdown")
+
+    async def mock_unload_platforms(entry, platforms):
+        call_order.append("unload_platforms")
+        return True
+
+    with patch.object(coordinator, "async_shutdown", side_effect=mock_shutdown):
+        mock_hass.config_entries.async_unload_platforms = AsyncMock(side_effect=mock_unload_platforms)
+        await async_unload_entry(mock_hass, mock_config_entry)
+
+    assert call_order == ["shutdown", "unload_platforms"], (
+        f"Expected coordinator shutdown before platform unload, got: {call_order}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_extra_state_attributes_substitutes_are_strings(mock_hass, mock_config_entry, mock_client):
+    """Test that substitutes in extra_state_attributes are name strings, not raw API dicts."""
+    coordinator = ZenbiCalendarDataUpdateCoordinator(mock_hass, mock_client, mock_config_entry)
+
+    now = datetime.now(timezone.utc)
+    future_start = (now + timedelta(hours=1)).isoformat()
+    future_end = (now + timedelta(hours=2)).isoformat()
+
+    item = ZenbiCalendarItem(
+        id="sub-test",
+        title="PE",
+        start=future_start,
+        end=future_end,
+        substitutes=[{"name": "Mr. Larsen"}, {"name": "Ms. Nielsen"}],
+    )
+    coordinator.data = ZenbiCalendarData(
+        calendar_items=[item],
+        window_start=now - timedelta(days=1),
+        window_end=now + timedelta(days=7),
+    )
+
+    entity = ZenbiScheduleCalendarEntity(coordinator, mock_config_entry)
+    attrs = entity.extra_state_attributes
+
+    assert "substitutes" in attrs
+    # Must be a list of strings, not dicts — prevents recorder bloat
+    assert attrs["substitutes"] == ["Mr. Larsen", "Ms. Nielsen"]
+    for sub in attrs["substitutes"]:
+        assert isinstance(sub, str), f"Expected string, got {type(sub)}: {sub}"
+
+
+@pytest.mark.asyncio
+async def test_todo_cal_by_id_cache(mock_hass, mock_config_entry, mock_client):
+    """Test that _cal_by_id lookup is built from existing coordinator data in __init__
+    and refreshed by _handle_coordinator_update when data changes."""
+    coordinator = ZenbiCalendarDataUpdateCoordinator(mock_hass, mock_client, mock_config_entry)
+
+    item = ZenbiCalendarItem(id="cal-abc", title="History", start="", end="")
+    hw = ZenbiHomework(id="hw-abc", calendar_item_id="cal-abc", description="Read ch 5", raw_description="", date="")
+    coordinator.data = ZenbiCalendarData(calendar_items=[item], homeworks=[hw])
+
+    entity = ZenbiHomeworkTodoListEntity(coordinator, mock_config_entry)
+
+    # __init__ pre-populates the cache from whatever coordinator.data holds
+    assert "cal-abc" in entity._cal_by_id
+    assert entity._cal_by_id["cal-abc"].title == "History"
+
+    # Simulate data change: new item replaces old one; homework also points to new item
+    new_item = ZenbiCalendarItem(id="cal-xyz", title="Physics", start="", end="")
+    new_hw = ZenbiHomework(id="hw-abc", calendar_item_id="cal-xyz", description="Read ch 5", raw_description="", date="")
+    coordinator.data = ZenbiCalendarData(calendar_items=[new_item], homeworks=[new_hw])
+
+    # Before _handle_coordinator_update the cache still has the old data
+    assert "cal-abc" in entity._cal_by_id
+
+    # Trigger coordinator update — cache should refresh
+    entity._handle_coordinator_update()
+    assert "cal-abc" not in entity._cal_by_id
+    assert "cal-xyz" in entity._cal_by_id
+    assert entity._cal_by_id["cal-xyz"].title == "Physics"
+
+    # todo_items should use the refreshed dict
+    items = await entity.async_get_todo_items()
+    assert len(items) == 1
+    assert items[0].summary == "Physics: Read ch 5"
+
+
+@pytest.mark.asyncio
+async def test_multi_student_platform_setup(mock_hass, mock_config_entry, mock_client):
+    """Test that multiple students generate separate student devices + a shared school device."""
+    coordinator = ZenbiCalendarDataUpdateCoordinator(mock_hass, mock_client, mock_config_entry)
+    coordinator.data = ZenbiCalendarData(
+        students=["Albert Hansen", "Ida Hansen"],
+        calendar_items=[],
+        homeworks=[],
+        weekly_schedules=[],
+        planning_labels=[],
+    )
+    mock_hass.data[DOMAIN] = {mock_config_entry.entry_id: coordinator}
+
+    # 1. Calendar setup
+    cal_entities = []
+    await async_setup_calendar_entry(mock_hass, mock_config_entry, lambda ents: cal_entities.extend(ents))
+    # 2 student schedule calendars + 1 planning + 1 weekly_messages = 4 entities
+    assert len(cal_entities) == 4
+    sched_albert = next(e for e in cal_entities if e.unique_id == "entry_123_albert_hansen_schedule")
+    sched_ida = next(e for e in cal_entities if e.unique_id == "entry_123_ida_hansen_schedule")
+    planning = next(e for e in cal_entities if e.unique_id == "entry_123_planning")
+    weekly = next(e for e in cal_entities if e.unique_id == "entry_123_weekly_messages")
+
+    assert sched_albert.device_info.name == "Zenbi (Albert Hansen)"
+    assert (DOMAIN, "entry_123_albert_hansen") in sched_albert.device_info.identifiers
+
+    assert sched_ida.device_info.name == "Zenbi (Ida Hansen)"
+    assert (DOMAIN, "entry_123_ida_hansen") in sched_ida.device_info.identifiers
+
+    assert planning.device_info.name == "Zenbi (School)"
+    assert (DOMAIN, "entry_123_school") in planning.device_info.identifiers
+
+    assert weekly.device_info.name == "Zenbi (School)"
+    assert (DOMAIN, "entry_123_school") in weekly.device_info.identifiers
+
+    # 2. Todo setup
+    todo_entities = []
+    await async_setup_todo_entry(mock_hass, mock_config_entry, lambda ents: todo_entities.extend(ents))
+    assert len(todo_entities) == 2
+    todo_albert = next(e for e in todo_entities if e.unique_id == "entry_123_albert_hansen_homework")
+    todo_ida = next(e for e in todo_entities if e.unique_id == "entry_123_ida_hansen_homework")
+
+    assert todo_albert.device_info.name == "Zenbi (Albert Hansen)"
+    assert todo_ida.device_info.name == "Zenbi (Ida Hansen)"
+
+    # 3. Sensor setup
+    sensor_entities = []
+    await async_setup_sensor_entry(mock_hass, mock_config_entry, lambda ents: sensor_entities.extend(ents))
+    assert len(sensor_entities) == 2
+    sensor_albert = next(e for e in sensor_entities if e.unique_id == "entry_123_albert_hansen_weekly_plan")
+    sensor_ida = next(e for e in sensor_entities if e.unique_id == "entry_123_ida_hansen_weekly_plan")
+
+    assert sensor_albert.device_info.name == "Zenbi (Albert Hansen)"
+    assert sensor_ida.device_info.name == "Zenbi (Ida Hansen)"
+
+
+@pytest.mark.asyncio
+async def test_strict_student_filtering(mock_hass, mock_config_entry, mock_client):
+    """Test that calendar and todo entities strictly isolate data to the assigned student."""
+    coordinator = ZenbiCalendarDataUpdateCoordinator(mock_hass, mock_client, mock_config_entry)
+
+    # Albert's class & homework
+    item_albert = ZenbiCalendarItem(
+        id="c-bio",
+        title="Biologi",
+        start="2026-09-22T08:00:00+02:00",
+        end="2026-09-22T09:00:00+02:00",
+        participant_models=[{"name": "Albert Hansen"}],
+    )
+    hw_albert = ZenbiHomework(
+        id="hw-bio",
+        calendar_item_id="c-bio",
+        description="Read biology ch 2",
+        raw_description="",
+        date="2026-09-22",
+    )
+
+    # Ida's class & homework
+    item_ida = ZenbiCalendarItem(
+        id="c-chem",
+        title="Kemi",
+        start="2026-09-22T10:00:00+02:00",
+        end="2026-09-22T11:00:00+02:00",
+        participant_models=[{"name": "Ida Hansen"}],
+    )
+    hw_ida = ZenbiHomework(
+        id="hw-chem",
+        calendar_item_id="c-chem",
+        description="Lab report",
+        raw_description="",
+        date="2026-09-22",
+    )
+
+    coordinator.data = ZenbiCalendarData(
+        students=["Albert Hansen", "Ida Hansen"],
+        calendar_items=[item_albert, item_ida],
+        homeworks=[hw_albert, hw_ida],
+        window_start=datetime.fromisoformat("2026-09-21T00:00:00+02:00"),
+        window_end=datetime.fromisoformat("2026-10-05T00:00:00+02:00"),
+    )
+
+    # Test Albert's calendar
+    cal_albert = ZenbiScheduleCalendarEntity(coordinator, mock_config_entry, student_name="Albert Hansen")
+    albert_events = await cal_albert.async_get_events(
+        mock_hass,
+        datetime.fromisoformat("2026-09-21T00:00:00+02:00"),
+        datetime.fromisoformat("2026-09-25T00:00:00+02:00"),
+    )
+    assert len(albert_events) == 1
+    assert albert_events[0].summary == "Biologi"
+
+    # Test Ida's calendar
+    cal_ida = ZenbiScheduleCalendarEntity(coordinator, mock_config_entry, student_name="Ida Hansen")
+    ida_events = await cal_ida.async_get_events(
+        mock_hass,
+        datetime.fromisoformat("2026-09-21T00:00:00+02:00"),
+        datetime.fromisoformat("2026-09-25T00:00:00+02:00"),
+    )
+    assert len(ida_events) == 1
+    assert ida_events[0].summary == "Kemi"
+
+    # Test Albert's todo list
+    todo_albert = ZenbiHomeworkTodoListEntity(coordinator, mock_config_entry, student_name="Albert Hansen")
+    albert_todos = await todo_albert.async_get_todo_items()
+    assert len(albert_todos) == 1
+    assert albert_todos[0].summary == "Biologi: Read biology ch 2"
+
+    # Test Ida's todo list
+    todo_ida = ZenbiHomeworkTodoListEntity(coordinator, mock_config_entry, student_name="Ida Hansen")
+    ida_todos = await todo_ida.async_get_todo_items()
+    assert len(ida_todos) == 1
+    assert ida_todos[0].summary == "Kemi: Lab report"
+
+
+@pytest.mark.asyncio
+async def test_weekly_plan_sensor_attributes(mock_hass, mock_config_entry, mock_client):
+    """Test ZenbiWeeklyPlanSensor exposes current and next week plan in markdown."""
+    coordinator = ZenbiCalendarDataUpdateCoordinator(mock_hass, mock_client, mock_config_entry)
+
+    sched_current = ZenbiWeeklySchedule(
+        id="ws-cur",
+        title="Uge 39 - Dansk tema",
+        start="2026-09-21T00:00:00+02:00",
+        end="2026-09-27T23:59:59+02:00",
+        description="# Uge 39\nVi læser H.C. Andersen denne uge.\n\n- Mandag: Oplæsning\n- Fredag: Opgave",
+        raw_description="",
+        files=[{"name": "hc_andersen_tekst.pdf"}],
+    )
+    sched_next = ZenbiWeeklySchedule(
+        id="ws-nxt",
+        title="Uge 40 - Matematikuge",
+        start="2026-09-28T00:00:00+02:00",
+        end="2026-10-04T23:59:59+02:00",
+        description="# Uge 40\nVi arbejder med brøker.",
+        raw_description="",
+    )
+
+    coordinator.data = ZenbiCalendarData(
+        students=["Albert Hansen"],
+        weekly_schedules=[sched_current, sched_next],
+    )
+
+    sensor = ZenbiWeeklyPlanSensor(coordinator, mock_config_entry, student_name="Albert Hansen")
+    assert sensor.unique_id == "entry_123_albert_hansen_weekly_plan"
+    assert sensor.translation_key == "weekly_plan"
+    assert sensor.device_info.name == "Zenbi (Albert Hansen)"
+
+    # State is current week title
+    assert sensor.native_value == "Uge 39 - Dansk tema"
+
+    attrs = sensor.extra_state_attributes
+    # Current week markdown
+    assert "current_week_plan" in attrs
+    assert "H.C. Andersen" in attrs["current_week_plan"]
+    assert attrs["files"] == [{"name": "hc_andersen_tekst.pdf"}]
+
+    # Next week markdown
+    assert "next_week_plan" in attrs
+    assert "brøker" in attrs["next_week_plan"]
+    assert attrs["next_week_title"] == "Uge 40 - Matematikuge"
+
+
+@pytest.mark.asyncio
+async def test_weekly_plan_sensor_smart_grouping_and_aggregation(mock_hass, mock_config_entry, mock_client):
+    """Test smart grouping of multiple messages in the same week, attachment aggregation, and fallback."""
+    coordinator = ZenbiCalendarDataUpdateCoordinator(mock_hass, mock_client, mock_config_entry)
+
+    today = dt_util.now().date()
+    start_cur = (today - timedelta(days=today.weekday())).isoformat() + "T00:00:00+02:00"
+    end_cur = (today + timedelta(days=6 - today.weekday())).isoformat() + "T23:59:59+02:00"
+
+    # 1. Active week with a text-rich message and an attachment-only message
+    sched_teacher = ZenbiWeeklySchedule(
+        id="ws-1",
+        title="Kære forældre i Pluto",
+        start=start_cur,
+        end=end_cur,
+        description="Vi har haft en fantastisk emneuge.",
+        raw_description="",
+        files=[{"name": "Hold (1)"}],
+    )
+    sched_fritter = ZenbiWeeklySchedule(
+        id="ws-2",
+        title="Fritter-kalender-26-27-uge-37",
+        start=start_cur,
+        end=end_cur,
+        description="",
+        raw_description="",
+        files=[{"name": "Fritter-kalender-26-27-uge-37.pdf"}],
+    )
+
+    coordinator.data = ZenbiCalendarData(
+        students=["Albert Hansen"],
+        weekly_schedules=[sched_teacher, sched_fritter],
+    )
+
+    sensor = ZenbiWeeklyPlanSensor(coordinator, mock_config_entry, student_name="Albert Hansen")
+
+    # Native value shows primary title + count of additional schedules
+    assert sensor.native_value == "Kære forældre i Pluto (+1 mere)"
+
+    attrs = sensor.extra_state_attributes
+    # current_week_plan must NOT be empty or overridden by fritter
+    assert "Vi har haft en fantastisk emneuge." in attrs["current_week_plan"]
+    assert "### Vedhæftede filer" in attrs["current_week_plan"]
+    # files must aggregate files from both messages without duplicates
+    assert [f["name"] for f in attrs["files"]] == ["Hold (1)", "Fritter-kalender-26-27-uge-37.pdf"]
+
+    # 2. Both schedules have text descriptions -> headers and separator
+    sched_fritter.description = "Husk skiftetøj til fredag."
+    attrs_multi = sensor.extra_state_attributes
+    assert "# Kære forældre i Pluto" in attrs_multi["current_week_plan"]
+    assert "# Fritter-kalender-26-27-uge-37" in attrs_multi["current_week_plan"]
+    assert "\n\n---\n\n" in attrs_multi["current_week_plan"]
+
+    # 3. Neither schedule has text descriptions -> fallback list of files
+    sched_teacher.description = ""
+    sched_fritter.description = ""
+    attrs_fallback = sensor.extra_state_attributes
+    assert "*Vedhæftede filer til denne uge:*" in attrs_fallback["current_week_plan"]
+    assert "- Hold (1)" in attrs_fallback["current_week_plan"]
+    assert "- Fritter-kalender-26-27-uge-37.pdf" in attrs_fallback["current_week_plan"]
+
+
+@pytest.mark.asyncio
+async def test_zenbi_file_download_view(mock_hass, mock_config_entry, mock_client):
+    """Test ZenbiFileDownloadView handles proxy downloads and redirects properly."""
+    coordinator = ZenbiCalendarDataUpdateCoordinator(mock_hass, mock_client, mock_config_entry)
+    mock_hass.data[DOMAIN] = {mock_config_entry.entry_id: coordinator}
+
+    view = ZenbiFileDownloadView()
+    assert view.requires_auth is False
+    assert view.url == "/api/zenbi/file/{entry_id}/{file_id}"
+
+    mock_request = MagicMock()
+    mock_request.app = {"hass": mock_hass}
+
+    # 1. Successful redirect (HTTP 302)
+    sas_url = "https://zenbistore.blob.core.windows.net/private-files/test.png?sas=token"
+    mock_client.get_weekly_schedule_file_download_url = AsyncMock(return_value=sas_url)
+
+    response = await view.get(mock_request, mock_config_entry.entry_id, "file-123")
+    assert response.status == 302
+    assert response.headers.get("Location") == sas_url
+    mock_client.get_weekly_schedule_file_download_url.assert_called_with("file-123")
+
+    # 2. Unknown entry_id -> 404
+    resp_404 = await view.get(mock_request, "nonexistent_entry", "file-123")
+    assert resp_404.status == 404
+
+    # 3. Client error -> 502
+    mock_client.get_weekly_schedule_file_download_url = AsyncMock(side_effect=ZenbiApiError("Upstream timeout"))
+    resp_502 = await view.get(mock_request, mock_config_entry.entry_id, "file-123")
+    assert resp_502.status == 502
+
+
+@pytest.mark.asyncio
+async def test_weekly_plan_sensor_file_download_links(mock_hass, mock_config_entry, mock_client):
+    """Test ZenbiWeeklyPlanSensor embeds proxy URLs in markdown and files attributes."""
+    coordinator = ZenbiCalendarDataUpdateCoordinator(mock_hass, mock_client, mock_config_entry)
+
+    today = dt_util.now().date()
+    start_cur = (today - timedelta(days=today.weekday())).isoformat() + "T00:00:00+02:00"
+    end_cur = (today + timedelta(days=6 - today.weekday())).isoformat() + "T23:59:59+02:00"
+
+    sched = ZenbiWeeklySchedule(
+        id="ws-links",
+        title="Uge 40",
+        start=start_cur,
+        end=end_cur,
+        description="Velkommen til en ny uge.",
+        raw_description="",
+        files=[
+            {"id": "file-uuid-1", "name": "Skema.pdf"},
+            {"fileId": "file-uuid-2", "name": "Lektier.docx"},
+        ],
+    )
+    coordinator.data = ZenbiCalendarData(
+        students=["Albert Hansen"],
+        weekly_schedules=[sched],
+    )
+
+    sensor = ZenbiWeeklyPlanSensor(coordinator, mock_config_entry, student_name="Albert Hansen")
+    attrs = sensor.extra_state_attributes
+
+    expected_url_1 = f"/api/zenbi/file/{mock_config_entry.entry_id}/file-uuid-1"
+    expected_url_2 = f"/api/zenbi/file/{mock_config_entry.entry_id}/file-uuid-2"
+
+    # Clickable markdown links in current_week_plan
+    assert f"[Skema.pdf]({expected_url_1})" in attrs["current_week_plan"]
+    assert f"[Lektier.docx]({expected_url_2})" in attrs["current_week_plan"]
+
+    # Structured dicts in files attribute
+    assert len(attrs["files"]) == 2
+    assert attrs["files"][0] == {
+        "name": "Skema.pdf",
+        "id": "file-uuid-1",
+        "url": expected_url_1,
+    }
+    assert attrs["files"][1] == {
+        "name": "Lektier.docx",
+        "id": "file-uuid-2",
+        "url": expected_url_2,
+    }
+
+
+@pytest.mark.asyncio
+async def test_multi_student_todo_persistence(mock_hass, mock_config_entry, mock_client):
+    """Test that completion states are tracked independently per student in persistent storage."""
+    coordinator = ZenbiCalendarDataUpdateCoordinator(mock_hass, mock_client, mock_config_entry)
+    storage_key = STORAGE_KEY_TODO.format(entry_id=mock_config_entry.entry_id)
+
+    # Pre-seed storage with Albert having completed hw-1 and Ida having completed hw-2
+    MockStore._storage_data[storage_key] = {
+        "completed_ids": {
+            "Albert Hansen": ["hw-1"],
+            "Ida Hansen": ["hw-2"],
+        }
+    }
+
+    hw1 = ZenbiHomework(id="hw-1", calendar_item_id="", description="Albert hw 1", raw_description="", date="")
+    hw2 = ZenbiHomework(id="hw-2", calendar_item_id="", description="Ida hw 1", raw_description="", date="")
+    hw3 = ZenbiHomework(id="hw-3", calendar_item_id="", description="Albert hw 2", raw_description="", date="")
+
+    coordinator.data = ZenbiCalendarData(
+        students=["Albert Hansen", "Ida Hansen"],
+        homeworks=[hw1, hw2, hw3],
+    )
+
+    todo_albert = ZenbiHomeworkTodoListEntity(coordinator, mock_config_entry, student_name="Albert Hansen")
+    todo_ida = ZenbiHomeworkTodoListEntity(coordinator, mock_config_entry, student_name="Ida Hansen")
+
+    await todo_albert.async_added_to_hass()
+    await todo_ida.async_added_to_hass()
+
+    assert todo_albert._completed_ids == {"hw-1"}
+    assert todo_ida._completed_ids == {"hw-2"}
+
+    # Albert completes hw-3 -> updates Albert's list without erasing Ida's
+    await todo_albert.async_update_todo_item(
+        TodoItem(uid="hw-3", summary="", status=TodoItemStatus.COMPLETED)
+    )
+
+    saved_data = MockStore._storage_data[storage_key]["completed_ids"]
+    assert isinstance(saved_data, dict)
+    assert set(saved_data["Albert Hansen"]) == {"hw-1", "hw-3"}
+    assert set(saved_data["Ida Hansen"]) == {"hw-2"}
 
 

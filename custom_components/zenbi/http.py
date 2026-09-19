@@ -1,0 +1,45 @@
+"""HTTP views for the Zenbi integration."""
+
+from __future__ import annotations
+
+import logging
+
+from aiohttp import web
+from homeassistant.components.http import HomeAssistantView
+from homeassistant.core import HomeAssistant
+
+from .const import DOMAIN
+
+_LOGGER = logging.getLogger(__name__)
+
+
+class ZenbiFileDownloadView(HomeAssistantView):
+    """View to proxy and redirect file downloads from Zenbi."""
+
+    url = "/api/zenbi/file/{entry_id}/{file_id}"
+    name = "api:zenbi:file"
+    requires_auth = False
+
+    async def get(
+        self, request: web.Request, entry_id: str, file_id: str
+    ) -> web.Response:
+        """Handle download request and redirect to fresh Azure Blob SAS URL."""
+        hass: HomeAssistant = request.app["hass"]
+        coordinator = hass.data.get(DOMAIN, {}).get(entry_id)
+        if not coordinator:
+            return web.Response(status=404, text="Zenbi integration entry not found")
+
+        try:
+            download_url = (
+                await coordinator.client.get_weekly_schedule_file_download_url(file_id)
+            )
+            return web.HTTPFound(location=download_url)
+        except Exception as err:
+            _LOGGER.error(
+                "Failed to retrieve file download URL for file %s (entry %s): %s",
+                file_id,
+                entry_id,
+                err,
+            )
+            return web.Response(status=502, text="Failed to retrieve file from Zenbi")
+

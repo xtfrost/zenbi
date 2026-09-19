@@ -14,8 +14,12 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN
-from .coordinator import ZenbiCalendarData, ZenbiCalendarDataUpdateCoordinator
+from .const import DOMAIN, slugify_name
+from .coordinator import (
+    ZenbiCalendarData,
+    ZenbiCalendarDataUpdateCoordinator,
+    ZenbiCalendarItem,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,11 +34,30 @@ async def async_setup_entry(
         getattr(entry, "runtime_data", None) or hass.data[DOMAIN][entry.entry_id]
     )
 
-    entities: List[CalendarEntity] = [
-        ZenbiScheduleCalendarEntity(coordinator, entry),
-        ZenbiPlanningCalendarEntity(coordinator, entry),
-        ZenbiWeeklyMessagesCalendarEntity(coordinator, entry),
-    ]
+    entities: List[CalendarEntity] = []
+
+    students = coordinator.data.students if coordinator.data else []
+
+    if students:
+        for student in students:
+            entities.append(
+                ZenbiScheduleCalendarEntity(coordinator, entry, student_name=student)
+            )
+        # If unassigned schedule items exist, expose a general school schedule
+        unassigned = coordinator.get_student_calendar_items(None)
+        if unassigned:
+            entities.append(
+                ZenbiScheduleCalendarEntity(coordinator, entry, student_name=None)
+            )
+    else:
+        # Fallback if no students discovered
+        entities.append(
+            ZenbiScheduleCalendarEntity(coordinator, entry, student_name=None)
+        )
+
+    # School-wide planning calendar and weekly messages archive
+    entities.append(ZenbiPlanningCalendarEntity(coordinator, entry))
+    entities.append(ZenbiWeeklyMessagesCalendarEntity(coordinator, entry))
 
     async_add_entities(entities)
 
@@ -45,37 +68,69 @@ class ZenbiBaseCalendarEntity(
     """Base calendar entity for Zenbi."""
 
     _attr_has_entity_name = True
+    # All entities are enabled by default; users can disable unused ones manually.
+    _attr_entity_registry_enabled_default = True
 
     def __init__(
         self,
         coordinator: ZenbiCalendarDataUpdateCoordinator,
         entry: ConfigEntry,
         key: str,
+        student_name: Optional[str] = None,
     ) -> None:
         """Initialize the base calendar entity."""
         super().__init__(coordinator)
         self.entry = entry
         self._key = key
+        self._student_name = student_name
         self._attr_translation_key = key
-        self._attr_unique_id = f"{entry.entry_id}_{key}"
 
-    @property
-    def device_info(self) -> DeviceInfo:
-        """Return device information to link entities together."""
-        title = self.entry.title
-        if (
-            self.coordinator.data
-            and self.coordinator.data.students
-            and len(self.coordinator.data.students) == 1
-        ):
-            title = self.coordinator.data.students[0]
+        if student_name:
+            slug = slugify_name(student_name)
+            self._attr_unique_id = f"{entry.entry_id}_{slug}_{key}"
+        else:
+            self._attr_unique_id = f"{entry.entry_id}_{key}"
+
+        self._cached_device_info: DeviceInfo = self._build_device_info()
+
+    def _build_device_info(self) -> DeviceInfo:
+        """Build a DeviceInfo object assigned to either student or school device."""
+        if self._student_name:
+            slug = slugify_name(self._student_name)
+            return DeviceInfo(
+                identifiers={(DOMAIN, f"{self.entry.entry_id}_{slug}")},
+                name=f"Zenbi ({self._student_name})",
+                manufacturer="Zenbi",
+                model="Zenbi Education Portal",
+                entry_type=DeviceEntryType.SERVICE,
+            )
+
+        # School-wide or generic fallback device
+        has_students = bool(self.coordinator.data and self.coordinator.data.students)
+        device_name = "Zenbi (School)" if has_students else "Zenbi"
+        ident = f"{self.entry.entry_id}_school" if has_students else self.entry.entry_id
         return DeviceInfo(
-            identifiers={(DOMAIN, self.entry.entry_id)},
-            name=f"Zenbi ({title})",
+            identifiers={(DOMAIN, ident)},
+            name=device_name,
             manufacturer="Zenbi",
             model="Zenbi Education Portal",
             entry_type=DeviceEntryType.SERVICE,
         )
+
+    def _handle_coordinator_update(self) -> None:
+        """Refresh device info cache on coordinator data update, then write state."""
+        self._cached_device_info = self._build_device_info()
+        super()._handle_coordinator_update()
+
+    async def async_added_to_hass(self) -> None:
+        """Refresh device info cache once HA has confirmed coordinator data."""
+        await super().async_added_to_hass()
+        self._cached_device_info = self._build_device_info()
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return cached device information."""
+        return self._cached_device_info
 
 
 class ZenbiScheduleCalendarEntity(ZenbiBaseCalendarEntity):
@@ -85,25 +140,33 @@ class ZenbiScheduleCalendarEntity(ZenbiBaseCalendarEntity):
         self,
         coordinator: ZenbiCalendarDataUpdateCoordinator,
         entry: ConfigEntry,
+        student_name: Optional[str] = None,
     ) -> None:
         """Initialize Zenbi schedule calendar."""
-        super().__init__(coordinator, entry, key="schedule")
+        super().__init__(coordinator, entry, key="schedule", student_name=student_name)
 
-    @property
-    def entity_registry_enabled_default(self) -> bool:
-        """Only enable calendar by default if there are schedule items."""
-        return bool(self.coordinator.data and self.coordinator.data.calendar_items)
+    def _get_items(self) -> List[ZenbiCalendarItem]:
+        """Get calendar items scoped to this entity's student or general school."""
+        if not self.coordinator.data or not self.coordinator.data.calendar_items:
+            return []
+        if self._student_name is not None:
+            return self.coordinator.get_student_calendar_items(self._student_name)
+        # If no students are known, return all items
+        if not self.coordinator.data.students:
+            return self.coordinator.data.calendar_items
+        return self.coordinator.get_student_calendar_items(None)
 
     @property
     def event(self) -> Optional[CalendarEvent]:
         """Return the next or current upcoming event."""
-        if not self.coordinator.data or not self.coordinator.data.calendar_items:
+        items = self._get_items()
+        if not items:
             return None
 
         now = dt_util.now()
         upcoming_events: List[CalendarEvent] = []
 
-        for item in self.coordinator.data.calendar_items:
+        for item in items:
             event = self._item_to_calendar_event(item)
             if event:
                 event_end = (
@@ -193,14 +256,19 @@ class ZenbiScheduleCalendarEntity(ZenbiBaseCalendarEntity):
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
-        """Return extra state attributes of the schedule entity."""
+        """Return extra state attributes of the schedule entity.
+
+        Only scalar values and flattened name lists are written to the recorder
+        to prevent unbounded raw API dicts accumulating in the database.
+        """
         attrs: Dict[str, Any] = {}
-        if not self.coordinator.data or not self.coordinator.data.calendar_items:
+        items = self._get_items()
+        if not items:
             return attrs
 
         current_event = self.event
         if current_event and current_event.uid:
-            for item in self.coordinator.data.calendar_items:
+            for item in items:
                 if str(item.id) == current_event.uid:
                     if item.homework:
                         attrs["homework"] = [
@@ -208,14 +276,24 @@ class ZenbiScheduleCalendarEntity(ZenbiBaseCalendarEntity):
                                 "id": hw.id,
                                 "description": hw.description,
                                 "date": hw.date,
-                                "files": hw.files,
+                                # Flatten to name strings only — no raw API dicts in recorder
+                                "files": [
+                                    f.get("name") or f.get("title", "")
+                                    for f in hw.files
+                                    if isinstance(f, dict)
+                                ],
                             }
                             for hw in item.homework
                         ]
                     if item.note:
                         attrs["note"] = item.note
                     if item.substitutes:
-                        attrs["substitutes"] = item.substitutes
+                        # Flatten substitutes to name strings only
+                        attrs["substitutes"] = [
+                            s.get("name") or s.get("title", "")
+                            for s in item.substitutes
+                            if isinstance(s, dict)
+                        ]
                     if item.planning:
                         attrs["planning_icon"] = item.planning.icon
                         attrs["planning_color"] = item.planning.color
@@ -229,7 +307,9 @@ class ZenbiScheduleCalendarEntity(ZenbiBaseCalendarEntity):
         end_date: datetime,
     ) -> List[CalendarEvent]:
         """Return calendar events within a datetime range."""
-        items = await self.coordinator.async_get_calendar_items(start_date, end_date)
+        items = await self.coordinator.async_get_calendar_items(
+            start_date, end_date, student_name=self._student_name
+        )
         events: List[CalendarEvent] = []
 
         for item in items:
@@ -252,7 +332,7 @@ class ZenbiScheduleCalendarEntity(ZenbiBaseCalendarEntity):
 
 
 class ZenbiPlanningCalendarEntity(ZenbiBaseCalendarEntity):
-    """Calendar entity for Zenbi all-day planning labels."""
+    """Calendar entity for Zenbi all-day planning labels (assigned to School device)."""
 
     def __init__(
         self,
@@ -260,12 +340,7 @@ class ZenbiPlanningCalendarEntity(ZenbiBaseCalendarEntity):
         entry: ConfigEntry,
     ) -> None:
         """Initialize Zenbi planning calendar."""
-        super().__init__(coordinator, entry, key="planning")
-
-    @property
-    def entity_registry_enabled_default(self) -> bool:
-        """Only enable calendar by default if there are planning labels."""
-        return bool(self.coordinator.data and self.coordinator.data.planning_labels)
+        super().__init__(coordinator, entry, key="planning", student_name=None)
 
     @property
     def event(self) -> Optional[CalendarEvent]:
@@ -360,7 +435,7 @@ class ZenbiPlanningCalendarEntity(ZenbiBaseCalendarEntity):
 
 
 class ZenbiWeeklyMessagesCalendarEntity(ZenbiBaseCalendarEntity):
-    """Calendar entity for Zenbi weekly schedule messages (ugeplaner)."""
+    """Calendar entity for Zenbi weekly schedule messages (assigned to School device)."""
 
     def __init__(
         self,
@@ -368,12 +443,7 @@ class ZenbiWeeklyMessagesCalendarEntity(ZenbiBaseCalendarEntity):
         entry: ConfigEntry,
     ) -> None:
         """Initialize Zenbi weekly messages calendar."""
-        super().__init__(coordinator, entry, key="weekly_messages")
-
-    @property
-    def entity_registry_enabled_default(self) -> bool:
-        """Only enable calendar by default if there are weekly schedule messages."""
-        return bool(self.coordinator.data and self.coordinator.data.weekly_schedules)
+        super().__init__(coordinator, entry, key="weekly_messages", student_name=None)
 
     @property
     def event(self) -> Optional[CalendarEvent]:
@@ -470,5 +540,3 @@ class ZenbiWeeklyMessagesCalendarEntity(ZenbiBaseCalendarEntity):
                     events.append(event)
 
         return events
-
-

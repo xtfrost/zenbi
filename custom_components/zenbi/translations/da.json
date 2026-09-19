@@ -45,6 +45,9 @@
       "schedule": {
         "name": "Skema"
       },
+      "school_schedule": {
+        "name": "Fællesskema"
+      },
       "planning": {
         "name": "Årsplan"
       },
@@ -55,6 +58,11 @@
     "todo": {
       "homework": {
         "name": "Lektier"
+      }
+    },
+    "sensor": {
+      "weekly_plan": {
+        "name": "Ugeplan"
       }
     }
   }

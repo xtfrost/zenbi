@@ -45,6 +45,9 @@
       "schedule": {
         "name": "Schedule"
       },
+      "school_schedule": {
+        "name": "School Schedule"
+      },
       "planning": {
         "name": "Planning"
       },
@@ -55,6 +58,11 @@
     "todo": {
       "homework": {
         "name": "Homework"
+      }
+    },
+    "sensor": {
+      "weekly_plan": {
+        "name": "Weekly Plan"
       }
     }
   }

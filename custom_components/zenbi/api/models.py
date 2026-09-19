@@ -176,6 +176,9 @@ class ZenbiWeeklySchedule:
     updated_by_user_id: Optional[str] = None
     made_by_user_id: Optional[str] = None
     raw_data: Dict[str, Any] = field(default_factory=dict)
+    # Parsed datetimes cached at construction time (compare=False to keep equality semantics)
+    start_dt: Optional[datetime] = field(default=None, compare=False, repr=False)
+    end_dt: Optional[datetime] = field(default=None, compare=False, repr=False)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ZenbiWeeklySchedule":
@@ -200,10 +203,21 @@ class ZenbiWeeklySchedule:
         if not title:
             title = "Weekly Message"
 
-        return cls(
+        def _parse_iso(s: str) -> Optional[datetime]:
+            if not s:
+                return None
+            try:
+                return datetime.fromisoformat(s)
+            except (ValueError, TypeError):
+                return None
+
+        start_str = str(data.get("start", ""))
+        end_str = str(data.get("end", ""))
+
+        instance = cls(
             id=str(data.get("id", "")),
-            start=str(data.get("start", "")),
-            end=str(data.get("end", "")),
+            start=start_str,
+            end=end_str,
             description=clean_desc,
             raw_description=raw_desc,
             title=title,
@@ -214,6 +228,9 @@ class ZenbiWeeklySchedule:
             made_by_user_id=data.get("madeByUserId"),
             raw_data=data,
         )
+        instance.start_dt = _parse_iso(start_str)
+        instance.end_dt = _parse_iso(end_str)
+        return instance
 
 
 @dataclass
@@ -234,6 +251,9 @@ class ZenbiCalendarItem:
     participant_models: List[Dict[str, Any]] = field(default_factory=list)
     homework: List[ZenbiHomework] = field(default_factory=list)
     raw_data: Dict[str, Any] = field(default_factory=dict)
+    # Parsed datetimes cached at construction time (compare=False to keep equality semantics)
+    start_dt: Optional[datetime] = field(default=None, compare=False, repr=False)
+    end_dt: Optional[datetime] = field(default=None, compare=False, repr=False)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ZenbiCalendarItem":
@@ -245,11 +265,22 @@ class ZenbiCalendarItem:
         raw_desc = data.get("description") or ""
         clean_desc = parse_quill_delta(raw_desc)
 
-        return cls(
+        start_str = data.get("start", "")
+        end_str = data.get("end", "")
+
+        def _parse_iso(s: str) -> Optional[datetime]:
+            if not s:
+                return None
+            try:
+                return datetime.fromisoformat(s)
+            except (ValueError, TypeError):
+                return None
+
+        instance = cls(
             id=data.get("id", ""),
             title=data.get("title", ""),
-            start=data.get("start", ""),
-            end=data.get("end", ""),
+            start=start_str,
+            end=end_str,
             description=clean_desc,
             note=data.get("note") or "",
             only_date=data.get("onlyDate", False),
@@ -261,6 +292,9 @@ class ZenbiCalendarItem:
             homework=homework_items,
             raw_data=data,
         )
+        instance.start_dt = _parse_iso(start_str)
+        instance.end_dt = _parse_iso(end_str)
+        return instance
 
     @property
     def student_names(self) -> List[str]:

@@ -10,6 +10,7 @@ from typing import Dict, List, Optional, Tuple
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
@@ -119,34 +120,41 @@ class ZenbiCalendarDataUpdateCoordinator(DataUpdateCoordinator[ZenbiCalendarData
         # Critical endpoint: calendar items
         if isinstance(calendar_res, Exception):
             if isinstance(calendar_res, ZenbiAuthError):
-                raise UpdateFailed(f"Zenbi authentication failed: {calendar_res}") from calendar_res
+                raise ConfigEntryAuthFailed(f"Zenbi credentials are invalid: {calendar_res}") from calendar_res
             if isinstance(calendar_res, ZenbiConnectionError):
                 raise UpdateFailed(f"Connection error to Zenbi API: {calendar_res}") from calendar_res
             if isinstance(calendar_res, ZenbiApiError):
                 raise UpdateFailed(f"Zenbi API error: {calendar_res}") from calendar_res
-            _LOGGER.exception("Unexpected error fetching Zenbi calendar data: %s", calendar_res)
+            _LOGGER.error("Unexpected error fetching Zenbi calendar data: %s", calendar_res, exc_info=calendar_res)
             raise UpdateFailed(f"Unexpected error: {calendar_res}") from calendar_res
 
         calendar_items: List[ZenbiCalendarItem] = calendar_res or []
 
         # Non-critical endpoints with fallback to empty list
         if isinstance(homework_res, Exception):
+            if isinstance(homework_res, ZenbiAuthError):
+                raise ConfigEntryAuthFailed(f"Zenbi credentials are invalid: {homework_res}") from homework_res
             _LOGGER.warning("Failed to fetch Zenbi homework: %s", homework_res)
             homeworks: List[ZenbiHomework] = []
         else:
             homeworks = homework_res or []
 
         if isinstance(weekly_res, Exception):
+            if isinstance(weekly_res, ZenbiAuthError):
+                raise ConfigEntryAuthFailed(f"Zenbi credentials are invalid: {weekly_res}") from weekly_res
             _LOGGER.warning("Failed to fetch Zenbi weekly schedules: %s", weekly_res)
             weekly_schedules: List[ZenbiWeeklySchedule] = []
         else:
             weekly_schedules = weekly_res or []
 
         if isinstance(planning_res, Exception):
+            if isinstance(planning_res, ZenbiAuthError):
+                raise ConfigEntryAuthFailed(f"Zenbi credentials are invalid: {planning_res}") from planning_res
             _LOGGER.warning("Failed to fetch Zenbi planning labels: %s", planning_res)
             planning_labels: List[ZenbiPlanningLabel] = []
         else:
             planning_labels = planning_res or []
+
 
         # Associate homework items with their calendar entries
         if homeworks and calendar_items:
@@ -173,10 +181,66 @@ class ZenbiCalendarDataUpdateCoordinator(DataUpdateCoordinator[ZenbiCalendarData
             window_end=end_dt,
         )
 
+    def get_student_calendar_items(
+        self, student_name: Optional[str] = None
+    ) -> List[ZenbiCalendarItem]:
+        """Return calendar items filtered by student.
+
+        If student_name is provided, returns items where student_name is in item.student_names.
+        If student_name is None, returns items with no student assigned (school-wide / general).
+        """
+        if not self.data or not self.data.calendar_items:
+            return []
+
+        if student_name is not None:
+            return [
+                item for item in self.data.calendar_items
+                if student_name in item.student_names
+            ]
+
+        # Unassigned items
+        return [
+            item for item in self.data.calendar_items
+            if not item.student_names
+        ]
+
+    def get_student_homeworks(
+        self, student_name: Optional[str] = None
+    ) -> List[ZenbiHomework]:
+        """Return homework items filtered by student.
+
+        Matches homework to student via its associated calendar item.
+        """
+        if not self.data or not self.data.homeworks:
+            return []
+
+        cal_by_id = {item.id: item for item in (self.data.calendar_items or [])}
+
+        if student_name is not None:
+            filtered: List[ZenbiHomework] = []
+            for hw in self.data.homeworks:
+                cal_item = cal_by_id.get(hw.calendar_item_id)
+                if cal_item and student_name in cal_item.student_names:
+                    filtered.append(hw)
+            return filtered
+
+        # Unassigned homework
+        filtered_unassigned: List[ZenbiHomework] = []
+        for hw in self.data.homeworks:
+            cal_item = cal_by_id.get(hw.calendar_item_id)
+            if not cal_item or not cal_item.student_names:
+                filtered_unassigned.append(hw)
+        return filtered_unassigned
+
     async def async_get_calendar_items(
-        self, start_date: datetime, end_date: datetime
+        self,
+        start_date: datetime,
+        end_date: datetime,
+        student_name: Optional[str] = None,
     ) -> List[ZenbiCalendarItem]:
         """Serve calendar events, querying API on-demand if range exceeds cached window."""
+        items: List[ZenbiCalendarItem] = []
+
         # If cache is valid and requested range is within the window, filter locally
         if (
             self.data
@@ -185,40 +249,40 @@ class ZenbiCalendarDataUpdateCoordinator(DataUpdateCoordinator[ZenbiCalendarData
             and start_date >= self.data.window_start
             and end_date <= self.data.window_end
         ):
-            filtered: List[ZenbiCalendarItem] = []
             for item in self.data.calendar_items:
-                try:
-                    item_start = dt_util.parse_datetime(item.start)
-                    item_end = dt_util.parse_datetime(item.end)
-                    if item_start and item_end:
-                        if item_end >= start_date and item_start <= end_date:
-                            filtered.append(item)
-                    else:
-                        filtered.append(item)
-                except Exception:
-                    filtered.append(item)
-            return filtered
+                item_start = item.start_dt
+                item_end = item.end_dt
+                if item_start and item_end:
+                    if item_end >= start_date and item_start <= end_date:
+                        items.append(item)
+                else:
+                    # Keep items whose dates could not be parsed
+                    items.append(item)
+        else:
+            # Out of rolling range -> fetch on-demand directly from API
+            _LOGGER.debug(
+                "Requested range (%s to %s) outside cached window. Fetching on demand.",
+                start_date.isoformat(),
+                end_date.isoformat(),
+            )
+            items = await self.client.get_calendar_items(start_date, end_date)
+            try:
+                homeworks = await self.client.get_homework(start_date, end_date)
+                hw_by_calendar_id: Dict[str, List[ZenbiHomework]] = {}
+                for hw in homeworks:
+                    if hw.calendar_item_id:
+                        hw_by_calendar_id.setdefault(hw.calendar_item_id, []).append(hw)
+                for item in items:
+                    if item.id in hw_by_calendar_id:
+                        item.homework = hw_by_calendar_id[item.id]
+            except Exception as err:
+                _LOGGER.debug("Failed to fetch on-demand homework: %s", err)
 
-        # Out of rolling range -> fetch on-demand directly from API
-        _LOGGER.debug(
-            "Requested range (%s to %s) outside cached window. Fetching on demand.",
-            start_date.isoformat(),
-            end_date.isoformat(),
-        )
-        calendar_items = await self.client.get_calendar_items(start_date, end_date)
-        try:
-            homeworks = await self.client.get_homework(start_date, end_date)
-            hw_by_calendar_id: Dict[str, List[ZenbiHomework]] = {}
-            for hw in homeworks:
-                if hw.calendar_item_id:
-                    hw_by_calendar_id.setdefault(hw.calendar_item_id, []).append(hw)
-            for item in calendar_items:
-                if item.id in hw_by_calendar_id:
-                    item.homework = hw_by_calendar_id[item.id]
-        except Exception as err:
-            _LOGGER.debug("Failed to fetch on-demand homework: %s", err)
+        # Apply student filter if specified
+        if student_name is not None:
+            return [it for it in items if student_name in it.student_names]
 
-        return calendar_items
+        return items
 
     async def async_get_weekly_schedules(
         self, start_date: datetime, end_date: datetime
@@ -233,15 +297,13 @@ class ZenbiCalendarDataUpdateCoordinator(DataUpdateCoordinator[ZenbiCalendarData
         ):
             filtered: List[ZenbiWeeklySchedule] = []
             for item in self.data.weekly_schedules:
-                try:
-                    item_start = dt_util.parse_datetime(item.start)
-                    item_end = dt_util.parse_datetime(item.end)
-                    if item_start and item_end:
-                        if item_end >= start_date and item_start <= end_date:
-                            filtered.append(item)
-                    else:
+                item_start = item.start_dt
+                item_end = item.end_dt
+                if item_start and item_end:
+                    if item_end >= start_date and item_start <= end_date:
                         filtered.append(item)
-                except Exception:
+                else:
+                    # Keep items whose dates could not be parsed
                     filtered.append(item)
             return filtered
 

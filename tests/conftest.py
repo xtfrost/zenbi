@@ -116,10 +116,25 @@ class MockOptionsFlow:
         return {"type": "create_entry", "title": title, "data": data}
 
 
+class MockHttp:
+    def __init__(self):
+        self.views = []
+
+    def register_view(self, view):
+        self.views.append(view)
+
+
+class HomeAssistantView:
+    url: str
+    name: str
+    requires_auth: bool = True
+
+
 class MockHomeAssistant:
     def __init__(self):
         from unittest.mock import AsyncMock
         self.data: Dict[str, Any] = {}
+        self.http = MockHttp()
         self.config_entries = MagicMock()
         self.config_entries.async_reload = AsyncMock(return_value=True)
         self.config_entries.async_update_entry = MagicMock()
@@ -231,6 +246,34 @@ class TodoListEntity:
         pass
 
 
+class SensorEntity:
+    _attr_has_entity_name = False
+    _attr_name: Optional[str] = None
+    _attr_unique_id: Optional[str] = None
+    _attr_translation_key: Optional[str] = None
+    _attr_native_value: Any = None
+    _attr_extra_state_attributes: Dict[str, Any] = {}
+
+    @property
+    def unique_id(self) -> Optional[str]:
+        return self._attr_unique_id
+
+    @property
+    def translation_key(self) -> Optional[str]:
+        return self._attr_translation_key
+
+    @property
+    def native_value(self) -> Any:
+        return self._attr_native_value
+
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        return self._attr_extra_state_attributes
+
+    def async_write_ha_state(self) -> None:
+        pass
+
+
 class DeviceEntryType(str, enum.Enum):
     SERVICE = "service"
 
@@ -246,6 +289,10 @@ class DeviceInfo:
 
 class UpdateFailed(Exception):
     """Exception to indicate update failure."""
+
+
+class ConfigEntryAuthFailed(Exception):
+    """Exception to indicate that re-authentication is required."""
 
 
 class DataUpdateCoordinator(Generic[_DataT]):
@@ -271,6 +318,10 @@ class CoordinatorEntity(Generic[_CoordinatorT]):
         self.coordinator = coordinator
 
     async def async_added_to_hass(self) -> None:
+        pass
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
         pass
 
 
@@ -357,6 +408,16 @@ def register_mock_modules():
     todo.TodoItem = TodoItem
     todo.TodoItemStatus = TodoItemStatus
     components.todo = todo
+
+    # homeassistant.components.sensor
+    sensor = types.ModuleType("homeassistant.components.sensor")
+    sensor.SensorEntity = SensorEntity
+    components.sensor = sensor
+
+    # homeassistant.components.http
+    http = types.ModuleType("homeassistant.components.http")
+    http.HomeAssistantView = HomeAssistantView
+    components.http = http
     ha.components = components
 
     # homeassistant.helpers
@@ -391,6 +452,11 @@ def register_mock_modules():
     util.dt = dt
     ha.util = util
 
+    # homeassistant.exceptions
+    exceptions = types.ModuleType("homeassistant.exceptions")
+    exceptions.ConfigEntryAuthFailed = ConfigEntryAuthFailed
+    ha.exceptions = exceptions
+
     # Inject into sys.modules
     sys.modules["homeassistant"] = ha
     sys.modules["homeassistant.core"] = core
@@ -399,6 +465,9 @@ def register_mock_modules():
     sys.modules["homeassistant.components"] = components
     sys.modules["homeassistant.components.calendar"] = calendar
     sys.modules["homeassistant.components.todo"] = todo
+    sys.modules["homeassistant.components.sensor"] = sensor
+    sys.modules["homeassistant.components.http"] = http
+    sys.modules["homeassistant.exceptions"] = exceptions
     sys.modules["homeassistant.helpers"] = helpers
     sys.modules["homeassistant.helpers.aiohttp_client"] = aiohttp_client
     sys.modules["homeassistant.helpers.device_registry"] = device_registry

@@ -20,6 +20,7 @@ from .const import (
     STORAGE_VERSION,
 )
 from .coordinator import ZenbiCalendarDataUpdateCoordinator
+from .http import ZenbiFileDownloadView
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -49,8 +50,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if hasattr(entry, "runtime_data"):
         entry.runtime_data = coordinator
 
-    # Forward setup to platforms (calendar, todo)
+    # Forward setup to platforms (calendar, todo, sensor)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # Register file download view once across all Zenbi entries
+    if not hass.data[DOMAIN].get("_view_registered"):
+        if hasattr(hass, "http") and hasattr(hass.http, "register_view"):
+            hass.http.register_view(ZenbiFileDownloadView())
+        hass.data[DOMAIN]["_view_registered"] = True
 
     # Register options update listener
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
@@ -60,16 +67,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a Zenbi config entry."""
+    # 1. Stop the background refresh loop BEFORE platform entities start tearing down,
+    #    to prevent an in-flight coordinator refresh from racing entity removal.
+    coordinator = (
+        getattr(entry, "runtime_data", None)
+        or hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    )
+    if coordinator and hasattr(coordinator, "async_shutdown"):
+        await coordinator.async_shutdown()
+
+    # 2. Now safely unload all platform entities.
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        coordinator = (
-            getattr(entry, "runtime_data", None)
-            or hass.data.get(DOMAIN, {}).get(entry.entry_id)
-        )
-        if coordinator:
-            if hasattr(coordinator, "async_shutdown"):
-                await coordinator.async_shutdown()
-
         hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
         if hasattr(entry, "runtime_data"):
             entry.runtime_data = None
