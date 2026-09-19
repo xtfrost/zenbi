@@ -121,24 +121,24 @@ Renders the active week's plan with rich formatting, clickable file attachment l
 type: markdown
 title: Ugeplan
 content: >-
-  {{ state_attr('sensor.zenbi_albert_hansen_weekly_plan', 'current_week_plan') }}
+  {{ state_attr('sensor.zenbi_weekly_plan', 'current_week_plan') }}
 
-  {% if state_attr('sensor.zenbi_albert_hansen_weekly_plan', 'next_week_plan') %}
+  {% if state_attr('sensor.zenbi_weekly_plan', 'next_week_plan') %}
   ---
-  ### Næste uges plan ({{ state_attr('sensor.zenbi_albert_hansen_weekly_plan', 'next_week_title') }})
-  {{ state_attr('sensor.zenbi_albert_hansen_weekly_plan', 'next_week_plan') }}
+  ### Næste uges plan ({{ state_attr('sensor.zenbi_weekly_plan', 'next_week_title') }})
+  {{ state_attr('sensor.zenbi_weekly_plan', 'next_week_plan') }}
   {% endif %}
 ```
 
 ### 2. Timed Class Schedule (Calendar Card)
-Displays your child's daily class schedule alongside school holidays and semester milestones:
+Displays daily class schedule alongside school holidays and semester milestones:
 
 ```yaml
 type: calendar
 title: Skoleskema
 initial_view: dayGridMonth
 entities:
-  - calendar.zenbi_albert_hansen_schedule
+  - calendar.zenbi_schedule
   - calendar.zenbi_planning
 ```
 
@@ -147,7 +147,7 @@ An interactive checklist of school assignments that syncs completion status pers
 
 ```yaml
 type: todo-list
-entity: todo.zenbi_albert_hansen_homework
+entity: todo.zenbi_homework
 title: Lektier
 ```
 
@@ -162,7 +162,7 @@ icon: mdi:sync
 ```
 
 ### 5. Complete Student Dashboard (Vertical Stack)
-Combine all cards into a single cohesive student school dashboard view:
+Combine all cards into a single cohesive school dashboard view:
 
 ```yaml
 type: vertical-stack
@@ -173,12 +173,12 @@ cards:
     icon: mdi:school-outline
 
   - type: todo-list
-    entity: todo.zenbi_albert_hansen_homework
+    entity: todo.zenbi_homework
     title: Lektier
 
   - type: calendar
     entities:
-      - calendar.zenbi_albert_hansen_schedule
+      - calendar.zenbi_schedule
       - calendar.zenbi_planning
     initial_view: dayGridMonth
     title: Skema & Årsplan
@@ -186,8 +186,11 @@ cards:
   - type: markdown
     title: Ugeplan
     content: >-
-      {{ state_attr('sensor.zenbi_albert_hansen_weekly_plan', 'current_week_plan') }}
+      {{ state_attr('sensor.zenbi_weekly_plan', 'current_week_plan') }}
 ```
+
+> [!TIP]
+> If you have multiple children enrolled in Zenbi, their entities will automatically include their name slug (e.g. `calendar.zenbi_albert_schedule`, `todo.zenbi_albert_homework`, and `sensor.zenbi_albert_weekly_plan`). Simply substitute the entity ID corresponding to each child.
 
 ### On-Demand Attachment Downloads
 Zenbi attachment files (e.g. SFO calendars, classroom handouts, homework files) are served via an on-demand proxy endpoint (`/api/zenbi/file/{entry_id}/{file_id}`). When clicked from dashboard cards, Home Assistant automatically generates a fresh Azure Blob SAS token and redirects to the download, ensuring attachment links never expire.

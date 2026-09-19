@@ -32,8 +32,8 @@ Zenbi automatically detects all enrolled students and creates dedicated devices:
 ### Weekly Plan (Ugeplan) Markdown Card
 ```yaml
 type: markdown
-title: Ugeplan for Albert
-content: '{{ state_attr("sensor.zenbi_albert_hansen_weekly_plan", "current_week_plan") }}'
+title: Ugeplan
+content: '{{ state_attr("sensor.zenbi_weekly_plan", "current_week_plan") }}'
 ```
 
 ### Sync Status Tile Card
