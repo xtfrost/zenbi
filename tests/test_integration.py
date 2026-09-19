@@ -303,7 +303,7 @@ async def test_calendar_weekly_messages_entity(mock_hass, mock_config_entry, moc
         description="**Kære forældre**\n\nBesked her.",
         raw_description="...",
         title="Kære forældre",
-        files=[{"name": "oversigt.pdf"}],
+        files=[{"id": "file-ov-1", "name": "oversigt.pdf"}],
     )
     coordinator.data = ZenbiCalendarData(
         weekly_schedules=[schedule],
@@ -322,7 +322,17 @@ async def test_calendar_weekly_messages_entity(mock_hass, mock_config_entry, moc
     # End date in HA calendar should be 7 days later
     assert next_event.end == today + timedelta(days=7)
     assert "**Kære forældre**" in next_event.description
-    assert "oversigt.pdf" in next_event.description
+    assert "[oversigt.pdf](/api/zenbi/file/entry_123/file-ov-1)" in next_event.description
+
+    # Extra state attributes with files
+    attrs = entity.extra_state_attributes
+    assert attrs["files"] == [
+        {
+            "name": "oversigt.pdf",
+            "id": "file-ov-1",
+            "url": "/api/zenbi/file/entry_123/file-ov-1",
+        }
+    ]
 
     # async_get_events
     events = await entity.async_get_events(

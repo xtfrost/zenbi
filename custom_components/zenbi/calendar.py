@@ -500,13 +500,18 @@ class ZenbiWeeklyMessagesCalendarEntity(ZenbiBaseCalendarEntity):
                 desc_parts.append(schedule.description)
 
             if getattr(schedule, "files", None):
-                file_names = [
-                    f.get("name") or f.get("title")
-                    for f in schedule.files
-                    if isinstance(f, dict) and (f.get("name") or f.get("title"))
-                ]
-                if file_names:
-                    desc_parts.append(f"Attachments: {', '.join(file_names)}")
+                file_links: List[str] = []
+                for f in schedule.files:
+                    if isinstance(f, dict):
+                        f_id = f.get("id") or f.get("fileId")
+                        name = f.get("name") or f.get("title")
+                        if name and f_id:
+                            url = f"/api/zenbi/file/{self.entry.entry_id}/{f_id}"
+                            file_links.append(f"[{name}]({url})")
+                        elif name:
+                            file_links.append(name)
+                if file_links:
+                    desc_parts.append(f"Vedhæftede filer:\n" + "\n".join(f"- {fl}" for fl in file_links))
 
             return CalendarEvent(
                 start=start_date,
@@ -518,6 +523,35 @@ class ZenbiWeeklyMessagesCalendarEntity(ZenbiBaseCalendarEntity):
         except Exception as err:
             _LOGGER.warning("Error parsing weekly schedule %s: %s", getattr(schedule, "id", "unknown"), err)
             return None
+
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        """Return extra state attributes containing attachment files."""
+        attrs: Dict[str, Any] = {}
+        if not self.coordinator.data or not self.coordinator.data.weekly_schedules:
+            return attrs
+
+        current_event = self.event
+        if not current_event or not current_event.uid:
+            return attrs
+
+        for s in self.coordinator.data.weekly_schedules:
+            if str(s.id) == current_event.uid:
+                if s.files:
+                    files: List[Dict[str, Any]] = []
+                    for f in s.files:
+                        if isinstance(f, dict):
+                            f_id = f.get("id") or f.get("fileId")
+                            name = f.get("name") or f.get("title") or "Vedhæftet fil"
+                            item: Dict[str, Any] = {"name": name}
+                            if f_id:
+                                item["id"] = f_id
+                                item["url"] = f"/api/zenbi/file/{self.entry.entry_id}/{f_id}"
+                            files.append(item)
+                    if files:
+                        attrs["files"] = files
+                break
+        return attrs
 
     async def async_get_events(
         self,
