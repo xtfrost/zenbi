@@ -1,0 +1,29 @@
+{
+  "entity": {
+    "calendar": {
+      "schedule": {
+        "default": "mdi:calendar-clock"
+      },
+      "school_schedule": {
+        "default": "mdi:calendar-account"
+      },
+      "planning": {
+        "default": "mdi:calendar-multiselect"
+      },
+      "weekly_messages": {
+        "default": "mdi:newspaper-variant-outline"
+      }
+    },
+    "todo": {
+      "homework": {
+        "default": "mdi:notebook-check-outline"
+      }
+    },
+    "sensor": {
+      "weekly_plan": {
+        "default": "mdi:bulletin-board"
+      }
+    }
+  }
+}
+
