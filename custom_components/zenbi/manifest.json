@@ -1,0 +1,11 @@
+{
+  "domain": "zenbi",
+  "name": "Zenbi",
+  "codeowners": ["@thomas"],
+  "config_flow": true,
+  "documentation": "https://github.com/custom-components/zenbi",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/custom-components/zenbi/issues",
+  "requirements": [],
+  "version": "1.0.0"
+}

@@ -1,0 +1,57 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Forbind til Zenbi",
+        "description": "Indtast dine Zenbi (https://app.zenbi.dk) loginoplysninger.",
+        "data": {
+          "username": "Brugernavn",
+          "password": "Adgangskode",
+          "unique_device_id": "Enheds-ID (valgfri, efterlad tom for automatisk)"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Gen-godkend med Zenbi",
+        "description": "Dine Zenbi-oplysninger for {username} er ugyldige. Opdater venligst din adgangskode.",
+        "data": {
+          "password": "Adgangskode"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Kunne ikke oprette forbindelse til Zenbi-serveren.",
+      "invalid_auth": "Ugyldigt brugernavn eller adgangskode.",
+      "unknown": "Der opstod en uventet fejl."
+    },
+    "abort": {
+      "already_configured": "Denne Zenbi-konto er allerede konfigureret.",
+      "reauth_successful": "Gen-godkendelse lykkedes."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Zenbi Indstillinger",
+        "description": "Konfigurer synkroniseringsintervaller for Zenbi.",
+        "data": {
+          "calendar_sync_interval_hours": "Synkroniseringsinterval for kalender (timer)",
+          "notification_sync_interval_mins": "Synkroniseringsinterval for notifikationer (minutter)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "calendar": {
+      "schedule": {
+        "name": "Skema"
+      },
+      "planning": {
+        "name": "Årsplan"
+      },
+      "weekly_messages": {
+        "name": "Ugebreve"
+      }
+    }
+  }
+}
+
