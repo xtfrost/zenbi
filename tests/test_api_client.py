@@ -29,6 +29,7 @@ from custom_components.zenbi.api.models import (
     ZenbiPlanningLabel,
     ZenbiPlanningMeta,
     ZenbiWeeklySchedule,
+    extract_student_names,
     parse_quill_delta,
 )
 from custom_components.zenbi.coordinator import calculate_rolling_window
@@ -534,3 +535,32 @@ def test_calculate_rolling_window_naive_datetime():
     assert start.weekday() == 0  # Monday
     assert start.hour == 0
     assert (end - start).days == 14
+
+
+def test_extract_student_names():
+    """Test extracting unique student names from participant models."""
+    item1 = ZenbiCalendarItem(
+        id="item-1",
+        title="Dansk",
+        start="2026-09-21T08:00:00+02:00",
+        end="2026-09-21T09:00:00+02:00",
+        participant_models=[
+            {"name": "Albert Hansen", "id": "p1"},
+            {"fullName": "Ida Hansen", "id": "p2"},
+        ],
+    )
+    item2 = ZenbiCalendarItem(
+        id="item-2",
+        title="Matematik",
+        start="2026-09-21T09:00:00+02:00",
+        end="2026-09-21T10:00:00+02:00",
+        participant_models=[
+            {"name": "Albert Hansen", "id": "p1"},  # duplicate
+            {"title": "Carl Hansen", "id": "p3"},
+        ],
+    )
+
+    assert item1.student_names == ["Albert Hansen", "Ida Hansen"]
+    unique_names = extract_student_names([item1, item2])
+    assert unique_names == ["Albert Hansen", "Ida Hansen", "Carl Hansen"]
+

@@ -31,4 +31,4 @@ ENDPOINT_HOMEWORKS = "/api/calendar/api/v1/homeworks/relations"
 ENDPOINT_WEEKLY_SCHEDULES = "/api/homework/api/v1/weeklyschedules/relations"
 
 # Platforms
-PLATFORMS = ["calendar"]
+PLATFORMS = ["calendar", "todo"]

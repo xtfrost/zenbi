@@ -194,9 +194,23 @@ flowchart TD
 - [x] **Naive Datetime Verification**: Added automated test verifying Copenhagen timezone attachment when naive datetimes are passed.
 - [x] **Session Ownership & Stub Verification**: Added tests for `close()` behavior on owned vs. external sessions and `get_notifications()` placeholder.
 
-### Phase 3: Multi-Student Support & Filtering
-- [ ] **Audit Multi-Child Payloads**: Inspect `/own/relation/users` and `participantModels` with multi-student parent accounts.
-- [ ] **Per-Child Calendar Entities**: Support generating distinct `calendar.zenbi_schedule_<child>` entities or configurable student selection in Options Flow.
+### Phase 3: Student Discovery & Native Homework Todo Platform (Completed)
+- [x] **Student Discovery**:
+  - Extracted student identity from `participantModels` via `ZenbiCalendarItem.student_names` and `extract_student_names()`.
+  - Contextualized device info with student name (`Zenbi ({student_name})`) with fallback to account title.
+- [x] **Native Home Assistant `todo` Platform**:
+  - Implemented [`custom_components/zenbi/todo.py`](file:///c:/Users/Thomas/Documents/Projects/ZenbiIntegration/custom_components/zenbi/todo.py) with `ZenbiHomeworkTodoListEntity`.
+  - Registered `"todo"` in `const.PLATFORMS`.
+  - Populated `TodoItem` items from `ZenbiHomework` with summary (`Subject: Preview`), full description + attachment filenames, and due date.
+  - Interactive status toggling (`NEEDS_ACTION` <-> `COMPLETED`) via `async_update_todo_item` preserving completion state.
+- [x] **Localization**:
+  - Synchronized `entity.todo.homework.name` ("Homework" / "Lektier") across `strings.json`, `en.json`, and `da.json`.
+- [x] **Automated Testing**:
+  - Registered `homeassistant.components.todo` shims in `tests/conftest.py`.
+  - Added unit test in `tests/test_api_client.py` and 5 integration tests in `tests/test_integration.py`.
+  - Verified 100% pass rate (42/42 tests passing).
+
+---
 
 ### Phase 4: Absence Reporting & Service Calls
 - [ ] **Reverse-Engineer Absence Endpoints**: Trace Zenbi web app endpoints for student absence registration ("Meld fravær / sygdom").
@@ -206,4 +220,5 @@ flowchart TD
 - [ ] **Notifications Endpoint**: Implement real API calls for `/api/notification/...` replacing the placeholder in `client.py`.
 - [ ] **Sensor Platform**: Add sensor entity (`sensor.zenbi_unread_messages` / `sensor.zenbi_notifications`) tracking unread school notices.
 - [ ] **Attachment Download Links**: Investigate signed temporary URLs for homework attachments.
+
 

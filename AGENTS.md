@@ -28,7 +28,7 @@ Before marking any task as complete, you must:
 - **Domain:** `custom_components/zenbi`
 - **Target Platform:** Home Assistant Core (Python 3.13+), HACS compatible.
 - **Service:** Danish school platform Zenbi ([app.zenbi.dk](https://app.zenbi.dk)).
-- **Primary Platforms:** `calendar` (`schedule`, `weekly_messages`, `planning`), `diagnostics`, `config_flow`, `options_flow`.
+- **Primary Platforms:** `calendar` (`schedule`, `weekly_messages`, `planning`), `todo` (`homework`), `diagnostics`, `config_flow`, `options_flow`.
 
 ### Directory Layout
 ```text
@@ -38,6 +38,7 @@ custom_components/zenbi/
 ├── const.py              # Constants, endpoints, intervals, User-Agent
 ├── coordinator.py        # DataUpdateCoordinator (14-day rolling window, asyncio.gather)
 ├── calendar.py           # CalendarEntity implementations
+├── todo.py               # TodoListEntity implementation (homework)
 ├── config_flow.py        # UI config & reauth flows
 ├── options_flow.py       # Configurable polling options
 ├── diagnostics.py        # Sensitive data redaction for HA diagnostics

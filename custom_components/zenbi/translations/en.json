@@ -51,6 +51,11 @@
       "weekly_messages": {
         "name": "Weekly Messages"
       }
+    },
+    "todo": {
+      "homework": {
+        "name": "Homework"
+      }
     }
   }
 }

@@ -171,6 +171,63 @@ class CalendarEntity:
         return []
 
 
+class TodoItemStatus(str, enum.Enum):
+    NEEDS_ACTION = "needs_action"
+    COMPLETED = "completed"
+
+
+class TodoListEntityFeature(enum.IntFlag):
+    UPDATE_TODO_ITEM = 1
+    CREATE_TODO_ITEM = 2
+    DELETE_TODO_ITEM = 4
+    MOVE_TODO_ITEM = 8
+    SET_DUE_DATE_ON_ITEM = 16
+    SET_DUE_DATETIME_ON_ITEM = 32
+    SET_DESCRIPTION_ON_ITEM = 64
+
+
+@dataclass
+class TodoItem:
+    summary: str
+    uid: Optional[str] = None
+    status: Optional[TodoItemStatus] = None
+    due: Optional[date | datetime] = None
+    description: Optional[str] = None
+
+
+class TodoListEntity:
+    _attr_has_entity_name = False
+    _attr_name: Optional[str] = None
+    _attr_unique_id: Optional[str] = None
+    _attr_translation_key: Optional[str] = None
+    _attr_supported_features = 0
+
+    @property
+    def unique_id(self) -> Optional[str]:
+        return self._attr_unique_id
+
+    @property
+    def translation_key(self) -> Optional[str]:
+        return self._attr_translation_key
+
+    @property
+    def supported_features(self) -> int:
+        return self._attr_supported_features
+
+    @property
+    def todo_items(self) -> Optional[List[TodoItem]]:
+        return None
+
+    def async_write_ha_state(self) -> None:
+        pass
+
+    async def async_get_todo_items(self) -> List[TodoItem]:
+        return self.todo_items or []
+
+    async def async_update_todo_item(self, item: TodoItem) -> None:
+        pass
+
+
 class DeviceEntryType(str, enum.Enum):
     SERVICE = "service"
 
@@ -262,6 +319,14 @@ def register_mock_modules():
     calendar.CalendarEntity = CalendarEntity
     calendar.CalendarEvent = CalendarEvent
     components.calendar = calendar
+
+    # homeassistant.components.todo
+    todo = types.ModuleType("homeassistant.components.todo")
+    todo.TodoListEntity = TodoListEntity
+    todo.TodoListEntityFeature = TodoListEntityFeature
+    todo.TodoItem = TodoItem
+    todo.TodoItemStatus = TodoItemStatus
+    components.todo = todo
     ha.components = components
 
     # homeassistant.helpers
@@ -299,6 +364,7 @@ def register_mock_modules():
     sys.modules["homeassistant.data_entry_flow"] = data_entry_flow
     sys.modules["homeassistant.components"] = components
     sys.modules["homeassistant.components.calendar"] = calendar
+    sys.modules["homeassistant.components.todo"] = todo
     sys.modules["homeassistant.helpers"] = helpers
     sys.modules["homeassistant.helpers.aiohttp_client"] = aiohttp_client
     sys.modules["homeassistant.helpers.device_registry"] = device_registry

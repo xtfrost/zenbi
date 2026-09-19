@@ -264,6 +264,29 @@ class ZenbiCalendarItem:
             raw_data=data,
         )
 
+    @property
+    def student_names(self) -> List[str]:
+        """Return participant student names for this calendar item."""
+        names: List[str] = []
+        for pm in self.participant_models:
+            if isinstance(pm, dict):
+                name = pm.get("name") or pm.get("fullName") or pm.get("title")
+                if name and isinstance(name, str) and name.strip():
+                    names.append(name.strip())
+        return names
+
+
+def extract_student_names(items: List[ZenbiCalendarItem]) -> List[str]:
+    """Extract unique student names from calendar items."""
+    names: List[str] = []
+    seen: set[str] = set()
+    for item in items:
+        for name in item.student_names:
+            if name not in seen:
+                seen.add(name)
+                names.append(name)
+    return names
+
 
 @dataclass
 class ZenbiPlanningLabel:

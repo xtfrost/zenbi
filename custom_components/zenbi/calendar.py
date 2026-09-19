@@ -62,9 +62,16 @@ class ZenbiBaseCalendarEntity(
     @property
     def device_info(self) -> DeviceInfo:
         """Return device information to link entities together."""
+        title = self.entry.title
+        if (
+            self.coordinator.data
+            and self.coordinator.data.students
+            and len(self.coordinator.data.students) == 1
+        ):
+            title = self.coordinator.data.students[0]
         return DeviceInfo(
             identifiers={(DOMAIN, self.entry.entry_id)},
-            name=f"Zenbi ({self.entry.title})",
+            name=f"Zenbi ({title})",
             manufacturer="Zenbi",
             model="Zenbi Education Portal",
             entry_type=DeviceEntryType.SERVICE,

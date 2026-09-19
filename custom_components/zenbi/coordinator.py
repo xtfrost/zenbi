@@ -20,6 +20,7 @@ from .api.models import (
     ZenbiHomework,
     ZenbiPlanningLabel,
     ZenbiWeeklySchedule,
+    extract_student_names,
 )
 from .const import (
     CONF_CALENDAR_SYNC_INTERVAL_HOURS,
@@ -59,6 +60,7 @@ class ZenbiCalendarData:
     planning_labels: List[ZenbiPlanningLabel] = field(default_factory=list)
     homeworks: List[ZenbiHomework] = field(default_factory=list)
     weekly_schedules: List[ZenbiWeeklySchedule] = field(default_factory=list)
+    students: List[str] = field(default_factory=list)
     last_synced: Optional[datetime] = None
     window_start: Optional[datetime] = None
     window_end: Optional[datetime] = None
@@ -151,11 +153,15 @@ class ZenbiCalendarDataUpdateCoordinator(DataUpdateCoordinator[ZenbiCalendarData
                 if item.id in hw_by_calendar_id:
                     item.homework = hw_by_calendar_id[item.id]
 
+        # Extract student names from calendar items
+        students = extract_student_names(calendar_items)
+
         return ZenbiCalendarData(
             calendar_items=calendar_items,
             planning_labels=planning_labels,
             homeworks=homeworks,
             weekly_schedules=weekly_schedules,
+            students=students,
             last_synced=now,
             window_start=start_dt,
             window_end=end_dt,

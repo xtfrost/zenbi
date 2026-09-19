@@ -22,6 +22,10 @@ This integration brings school schedules, homework tasks, weekly letters ("ugebr
 - 🗓️ **Annual Planning (`calendar.zenbi_planning` / `Årsplan`)**:
   - School holidays, milestones, and all-day semester events.
   - *Note:* Automatically defaults to disabled in the entity registry if your school does not publish annual planning labels.
+- 📝 **Native Homework Todo Platform (`todo.zenbi_homework` / `Lektier`)**:
+  - Dedicated Home Assistant Todo checklist for school assignments.
+  - Shows subject, homework preview, full markdown description, attachment filenames, and due dates.
+  - Interactively check off tasks directly from your Lovelace dashboard.
 - 🇩🇰 **Full Danish Localization**:
   - UI configuration, options dialogs, and entity names natively support Danish (`da`) and English (`en`).
 - 🔤 **Markdown & Quill Delta Parsing**:
@@ -87,6 +91,7 @@ To adjust update intervals:
 | `calendar.zenbi_schedule` | Skema / Schedule | **Yes** (if classes exist) | Timed school timetable, subjects, classroom resources, substitutes, and homework. |
 | `calendar.zenbi_weekly_messages` | Ugebreve / Weekly Messages | **Yes** (if letters exist) | 7-day all-day events containing weekly teacher letters and attachment lists. |
 | `calendar.zenbi_planning` | Årsplan / Planning | **No** (if school has 0 labels) | All-day school semester milestones and holidays. |
+| `todo.zenbi_homework` | Lektier / Homework | **Yes** | Dedicated checklist of homework tasks with due dates, previews, and completion toggles. |
 
 > [!TIP]
 > If your school starts using the annual planning module later, you can enable `calendar.zenbi_planning` at any time under **Settings** > **Entities**.
@@ -136,6 +141,7 @@ custom_components/zenbi/
 ├── const.py              # Constants, endpoints, defaults, and User-Agent
 ├── coordinator.py        # DataUpdateCoordinator with 14-day rolling window & asyncio.gather
 ├── calendar.py           # CalendarEntity implementations (Schedule, Planning, WeeklyMessages)
+├── todo.py               # TodoListEntity implementation (Homework / Lektier)
 ├── config_flow.py        # UI config flow & reauth modal
 ├── options_flow.py       # UI options flow (sync intervals)
 ├── diagnostics.py        # Sensitive credential redaction and diagnostics export

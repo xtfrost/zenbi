@@ -31,6 +31,11 @@ from custom_components.zenbi.calendar import (
     ZenbiWeeklyMessagesCalendarEntity,
     async_setup_entry as async_setup_calendar_entry,
 )
+from custom_components.zenbi.todo import (
+    ZenbiHomeworkTodoListEntity,
+    async_setup_entry as async_setup_todo_entry,
+)
+from homeassistant.components.todo import TodoItem, TodoItemStatus
 from custom_components.zenbi.config_flow import ZenbiConfigFlow
 from custom_components.zenbi.const import (
     CONF_CALENDAR_SYNC_INTERVAL_HOURS,
@@ -594,6 +599,171 @@ async def test_config_flow_reauth_cannot_connect(mock_hass, mock_config_entry):
         res = await flow.async_step_reauth_confirm({CONF_PASSWORD: "any_password"})
         assert res["type"] == "form"
         assert res["errors"]["base"] == "cannot_connect"
+
+
+@pytest.mark.asyncio
+async def test_todo_platform_setup(mock_hass, mock_config_entry, mock_client):
+    """Test todo platform async_setup_entry."""
+    coordinator = ZenbiCalendarDataUpdateCoordinator(mock_hass, mock_client, mock_config_entry)
+    mock_hass.data[DOMAIN] = {mock_config_entry.entry_id: coordinator}
+
+    added_entities = []
+    def async_add_entities(entities):
+        added_entities.extend(entities)
+
+    await async_setup_todo_entry(mock_hass, mock_config_entry, async_add_entities)
+    assert len(added_entities) == 1
+    assert isinstance(added_entities[0], ZenbiHomeworkTodoListEntity)
+    assert added_entities[0].translation_key == "homework"
+
+
+@pytest.mark.asyncio
+async def test_todo_entity_properties_and_items(mock_hass, mock_config_entry, mock_client):
+    """Test ZenbiHomeworkTodoListEntity item conversion, summary, due date and single-student naming."""
+    coordinator = ZenbiCalendarDataUpdateCoordinator(mock_hass, mock_client, mock_config_entry)
+
+    item = ZenbiCalendarItem(
+        id="cal-math",
+        title="Matematik",
+        start="2026-09-22T08:00:00+02:00",
+        end="2026-09-22T09:00:00+02:00",
+    )
+    hw = ZenbiHomework(
+        id="hw-100",
+        calendar_item_id="cal-math",
+        description="Regn side 12\nEkstra opgave 3",
+        raw_description="...",
+        date="2026-09-22",
+        files=[{"name": "opgaver.pdf"}],
+    )
+    coordinator.data = ZenbiCalendarData(
+        calendar_items=[item],
+        homeworks=[hw],
+        students=["Albert Hansen"],
+    )
+
+    entity = ZenbiHomeworkTodoListEntity(coordinator, mock_config_entry)
+    assert entity.unique_id == "entry_123_homework"
+    assert entity.translation_key == "homework"
+    assert entity.device_info.name == "Zenbi (Albert Hansen)"
+    assert entity.device_info.manufacturer == "Zenbi"
+
+    # Verify todo items
+    items = await entity.async_get_todo_items()
+    assert len(items) == 1
+    todo_item = items[0]
+    assert todo_item.uid == "hw-100"
+    assert todo_item.summary == "Matematik: Regn side 12"
+    assert todo_item.due == date(2026, 9, 22)
+    assert todo_item.status == TodoItemStatus.NEEDS_ACTION
+    assert "Regn side 12" in todo_item.description
+    assert "Files: opgaver.pdf" in todo_item.description
+
+
+@pytest.mark.asyncio
+async def test_todo_entity_toggle_completion(mock_hass, mock_config_entry, mock_client):
+    """Test toggling todo item completion status (NEEDS_ACTION <-> COMPLETED)."""
+    coordinator = ZenbiCalendarDataUpdateCoordinator(mock_hass, mock_client, mock_config_entry)
+
+    hw = ZenbiHomework(
+        id="hw-200",
+        calendar_item_id="cal-1",
+        description="Dansk stil",
+        raw_description="",
+        date="2026-09-23",
+    )
+    coordinator.data = ZenbiCalendarData(homeworks=[hw])
+
+    entity = ZenbiHomeworkTodoListEntity(coordinator, mock_config_entry)
+
+    # Initial state
+    items = await entity.async_get_todo_items()
+    assert items[0].status == TodoItemStatus.NEEDS_ACTION
+
+    # Mark completed
+    await entity.async_update_todo_item(
+        TodoItem(uid="hw-200", summary="", status=TodoItemStatus.COMPLETED)
+    )
+    items_after = await entity.async_get_todo_items()
+    assert items_after[0].status == TodoItemStatus.COMPLETED
+
+    # Unmark completed (back to NEEDS_ACTION)
+    await entity.async_update_todo_item(
+        TodoItem(uid="hw-200", summary="", status=TodoItemStatus.NEEDS_ACTION)
+    )
+    items_reset = await entity.async_get_todo_items()
+    assert items_reset[0].status == TodoItemStatus.NEEDS_ACTION
+
+    # Updating with empty UID is a safe no-op
+    await entity.async_update_todo_item(TodoItem(uid="", summary=""))
+
+
+@pytest.mark.asyncio
+async def test_todo_entity_empty_and_fallback(mock_hass, mock_config_entry, mock_client):
+    """Test empty homeworks and fallback behavior for summary and multi-student device name."""
+    coordinator = ZenbiCalendarDataUpdateCoordinator(mock_hass, mock_client, mock_config_entry)
+
+    # 1. Empty data
+    coordinator.data = ZenbiCalendarData(homeworks=[])
+    entity = ZenbiHomeworkTodoListEntity(coordinator, mock_config_entry)
+    assert await entity.async_get_todo_items() == []
+
+    # 2. Multi-student device name fallback to entry title
+    coordinator.data = ZenbiCalendarData(students=["Albert", "Ida"])
+    assert entity.device_info.name == "Zenbi (student@school.dk)"
+
+    # 3. Homework with no calendar item and no date (uses fallback date from calendar item if present or None)
+    hw_no_cal = ZenbiHomework(
+        id="hw-no-cal",
+        calendar_item_id="missing-id",
+        description="Only description here",
+        raw_description="",
+        date="",
+    )
+    coordinator.data = ZenbiCalendarData(homeworks=[hw_no_cal])
+    items = await entity.async_get_todo_items()
+    assert len(items) == 1
+    assert items[0].summary == "Only description here"
+    assert items[0].due is None
+
+    # 4. Homework with empty description and no subject -> defaults to "Homework"
+    hw_empty = ZenbiHomework(
+        id="hw-empty",
+        calendar_item_id="missing-id",
+        description="",
+        raw_description="",
+        date="",
+    )
+    coordinator.data = ZenbiCalendarData(homeworks=[hw_empty])
+    items2 = await entity.async_get_todo_items()
+    assert items2[0].summary == "Homework"
+
+
+@pytest.mark.asyncio
+async def test_todo_entity_malformed_homework(mock_hass, mock_config_entry, mock_client):
+    """Test that malformed homework items do not crash the entity."""
+    coordinator = ZenbiCalendarDataUpdateCoordinator(mock_hass, mock_client, mock_config_entry)
+
+    # An invalid item that triggers an exception during parsing
+    broken_hw = MagicMock()
+    broken_hw.id = "bad-hw"
+    # Make description raise an exception when accessed
+    type(broken_hw).description = property(lambda self: (_ for _ in ()).throw(ValueError("Corrupt")))
+
+    valid_hw = ZenbiHomework(
+        id="valid-hw",
+        calendar_item_id="",
+        description="Normal homework",
+        raw_description="",
+        date="2026-09-24",
+    )
+    coordinator.data = ZenbiCalendarData(homeworks=[broken_hw, valid_hw])
+
+    entity = ZenbiHomeworkTodoListEntity(coordinator, mock_config_entry)
+    items = await entity.async_get_todo_items()
+    assert len(items) == 1
+    assert items[0].uid == "valid-hw"
+
 
 
 

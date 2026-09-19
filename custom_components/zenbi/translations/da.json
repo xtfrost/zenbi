@@ -51,6 +51,11 @@
       "weekly_messages": {
         "name": "Ugebreve"
       }
+    },
+    "todo": {
+      "homework": {
+        "name": "Lektier"
+      }
     }
   }
 }
