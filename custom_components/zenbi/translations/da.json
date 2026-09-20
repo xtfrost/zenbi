@@ -34,8 +34,7 @@
         "title": "Zenbi Indstillinger",
         "description": "Konfigurer synkroniseringsintervaller for Zenbi.",
         "data": {
-          "calendar_sync_interval_hours": "Synkroniseringsinterval for kalender (timer)",
-          "notification_sync_interval_mins": "Synkroniseringsinterval for notifikationer (minutter)"
+          "calendar_sync_interval_hours": "Synkroniseringsinterval for kalender (timer)"
         }
       }
     }

@@ -87,8 +87,7 @@ To adjust update intervals:
 1. Go to **Settings** > **Devices & Services** > **Zenbi**.
 2. Click **Configure**.
 3. Customize:
-   - **Calendar Sync Interval (hours)**: Default is `24` hours (rolling 14-day window in `Europe/Copenhagen` timezone).
-   - **Notification Sync Interval (minutes)**: Reserved for future notification modules.
+   - **Calendar Sync Interval (hours)**: Default is `6` hours (rolling 14-day window in `Europe/Copenhagen` timezone).
 
 ---
 

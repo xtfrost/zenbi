@@ -507,6 +507,9 @@ class ZenbiWeeklyMessagesCalendarEntity(ZenbiBaseCalendarEntity):
                     upcoming.append(event)
 
         if not upcoming:
+            # On weekends if next week is not yet published, fallback to most recent message
+            if self.coordinator.data.weekly_schedules:
+                return self._schedule_to_calendar_event(self.coordinator.data.weekly_schedules[-1])
             return None
 
         upcoming.sort(
@@ -515,7 +518,7 @@ class ZenbiWeeklyMessagesCalendarEntity(ZenbiBaseCalendarEntity):
         return upcoming[0]
 
     def _schedule_to_calendar_event(self, schedule: Any) -> Optional[CalendarEvent]:
-        """Convert a ZenbiWeeklySchedule into a 7-day all-day CalendarEvent."""
+        """Convert a ZenbiWeeklySchedule into a Monday-to-Friday all-day CalendarEvent."""
         try:
             start_date: Optional[date] = None
             if hasattr(schedule, "start") and schedule.start:
@@ -528,17 +531,15 @@ class ZenbiWeeklyMessagesCalendarEntity(ZenbiBaseCalendarEntity):
             if not start_date:
                 return None
 
-            end_date: Optional[date] = None
-            if hasattr(schedule, "end") and schedule.end:
-                parsed_end_dt = dt_util.parse_datetime(schedule.end)
-                if parsed_end_dt:
-                    end_date = parsed_end_dt.date()
-                else:
-                    end_date = dt_util.parse_date(schedule.end)
-
-            # In Home Assistant, all-day calendar event end date is exclusive (7 days)
-            if not end_date or end_date <= start_date:
-                end_date = start_date + timedelta(days=7)
+            # Calculate end date: weekly messages span Monday to Friday (excluding weekends).
+            # In Home Assistant, all-day event end_date is exclusive.
+            # Setting end_date to Saturday (5 days from Monday) displays the event across Mon, Tue, Wed, Thu, Fri.
+            if start_date.weekday() <= 4:
+                # End after Friday (exclusive end date is Saturday)
+                end_date = start_date + timedelta(days=(5 - start_date.weekday()))
+            else:
+                # If message started on a weekend, default to 1 day
+                end_date = start_date + timedelta(days=1)
 
             desc_parts: List[str] = []
             if getattr(schedule, "description", None):

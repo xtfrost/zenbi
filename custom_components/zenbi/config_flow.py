@@ -16,12 +16,10 @@ from .api.client import ZenbiApiClient, generate_stable_device_id
 from .api.exceptions import ZenbiAuthError, ZenbiConnectionError
 from .const import (
     CONF_CALENDAR_SYNC_INTERVAL_HOURS,
-    CONF_NOTIFICATION_SYNC_INTERVAL_MINS,
     CONF_PASSWORD,
     CONF_UNIQUE_DEVICE_ID,
     CONF_USERNAME,
     DEFAULT_CALENDAR_SYNC_INTERVAL_HOURS,
-    DEFAULT_NOTIFICATION_SYNC_INTERVAL_MINS,
     DOMAIN,
 )
 from .options_flow import ZenbiOptionsFlowHandler
@@ -91,7 +89,6 @@ class ZenbiConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     },
                     options={
                         CONF_CALENDAR_SYNC_INTERVAL_HOURS: DEFAULT_CALENDAR_SYNC_INTERVAL_HOURS,
-                        CONF_NOTIFICATION_SYNC_INTERVAL_MINS: DEFAULT_NOTIFICATION_SYNC_INTERVAL_MINS,
                     },
                 )
 

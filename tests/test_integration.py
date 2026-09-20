@@ -50,12 +50,10 @@ from homeassistant.util import dt as dt_util
 from custom_components.zenbi.config_flow import ZenbiConfigFlow
 from custom_components.zenbi.const import (
     CONF_CALENDAR_SYNC_INTERVAL_HOURS,
-    CONF_NOTIFICATION_SYNC_INTERVAL_MINS,
     CONF_PASSWORD,
     CONF_UNIQUE_DEVICE_ID,
     CONF_USERNAME,
     DEFAULT_CALENDAR_SYNC_INTERVAL_HOURS,
-    DEFAULT_NOTIFICATION_SYNC_INTERVAL_MINS,
     DOMAIN,
     STORAGE_KEY_TODO,
     STORAGE_VERSION,
@@ -84,8 +82,7 @@ def mock_config_entry():
             CONF_UNIQUE_DEVICE_ID: "device-uuid-123",
         },
         options={
-            CONF_CALENDAR_SYNC_INTERVAL_HOURS: 24,
-            CONF_NOTIFICATION_SYNC_INTERVAL_MINS: 15,
+            CONF_CALENDAR_SYNC_INTERVAL_HOURS: 6,
         },
     )
 
@@ -300,7 +297,7 @@ async def test_calendar_weekly_messages_entity(mock_hass, mock_config_entry, moc
     """Test ZenbiWeeklyMessagesCalendarEntity properties and 7-day all-day event conversion."""
     coordinator = ZenbiCalendarDataUpdateCoordinator(mock_hass, mock_client, mock_config_entry)
 
-    today = date.today()
+    today = date(2026, 9, 21)  # A Monday
     schedule = ZenbiWeeklySchedule(
         id="ws-999",
         start=today.isoformat(),
@@ -324,8 +321,9 @@ async def test_calendar_weekly_messages_entity(mock_hass, mock_config_entry, moc
     assert next_event is not None
     assert next_event.summary == "Kære forældre"
     assert next_event.start == today
-    # End date in HA calendar should be 7 days later
-    assert next_event.end == today + timedelta(days=7)
+    # End date in HA calendar should span Monday to Friday (exclusive end date is Saturday = start + 5 days)
+    assert next_event.end == today + timedelta(days=5)
+    assert next_event.end.weekday() == 5  # Saturday (exclusive)
     assert "**Kære forældre**" in next_event.description
     assert "[oversigt.pdf](/api/zenbi/file/entry_123/file-ov-1)" in next_event.description
 
@@ -407,13 +405,14 @@ async def test_config_flow_invalid_auth(mock_hass):
 
 @pytest.mark.asyncio
 async def test_options_flow(mock_config_entry):
-    """Test options flow allows updating intervals."""
+    """Test options flow allows updating calendar sync interval."""
     flow = ZenbiOptionsFlowHandler(mock_config_entry)
 
     # Initial view
     res = await flow.async_step_init()
     assert res["type"] == "form"
     schema = res["schema"].schema
+    assert len(schema) == 1
     cal_key = next(k for k in schema if getattr(k, "schema", None) == CONF_CALENDAR_SYNC_INTERVAL_HOURS)
     cal_sel = schema[cal_key]
     assert isinstance(cal_sel, NumberSelector)
@@ -425,12 +424,10 @@ async def test_options_flow(mock_config_entry):
     res2 = await flow.async_step_init(
         {
             CONF_CALENDAR_SYNC_INTERVAL_HOURS: 12,
-            CONF_NOTIFICATION_SYNC_INTERVAL_MINS: 30,
         }
     )
     assert res2["type"] == "create_entry"
     assert res2["data"][CONF_CALENDAR_SYNC_INTERVAL_HOURS] == 12
-    assert res2["data"][CONF_NOTIFICATION_SYNC_INTERVAL_MINS] == 30
 
 
 @pytest.mark.asyncio

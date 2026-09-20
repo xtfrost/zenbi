@@ -503,15 +503,6 @@ async def test_client_close_and_session_ownership():
 
 
 @pytest.mark.asyncio
-async def test_client_get_notifications_placeholder():
-    """Test get_notifications placeholder method."""
-    client = ZenbiApiClient("user", "pass")
-    notifs = await client.get_notifications()
-    assert notifs == []
-    await client.close()
-
-
-@pytest.mark.asyncio
 async def test_client_authenticate_missing_token():
     """Test authenticate raises ZenbiAuthError when response lacks a token."""
     mock_session = MagicMock(spec=aiohttp.ClientSession)

@@ -314,10 +314,6 @@ class ZenbiApiClient:
 
         return [ZenbiPlanningLabel.from_dict(lbl) for lbl in labels_raw]
 
-    async def get_notifications(self) -> List[Dict[str, Any]]:
-        """Placeholder for future notifications endpoint."""
-        return []
-
     async def get_homework(
         self, start_dt: datetime, end_dt: datetime
     ) -> List[ZenbiHomework]:

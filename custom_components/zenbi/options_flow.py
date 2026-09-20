@@ -16,9 +16,7 @@ from homeassistant.helpers.selector import (
 
 from .const import (
     CONF_CALENDAR_SYNC_INTERVAL_HOURS,
-    CONF_NOTIFICATION_SYNC_INTERVAL_MINS,
     DEFAULT_CALENDAR_SYNC_INTERVAL_HOURS,
-    DEFAULT_NOTIFICATION_SYNC_INTERVAL_MINS,
 )
 
 
@@ -47,14 +45,6 @@ class ZenbiOptionsFlowHandler(config_entries.OptionsFlow):
                 CONF_CALENDAR_SYNC_INTERVAL_HOURS, DEFAULT_CALENDAR_SYNC_INTERVAL_HOURS
             ),
         )
-        current_notification_mins = self.config_entry.options.get(
-            CONF_NOTIFICATION_SYNC_INTERVAL_MINS,
-            self.config_entry.data.get(
-                CONF_NOTIFICATION_SYNC_INTERVAL_MINS,
-                DEFAULT_NOTIFICATION_SYNC_INTERVAL_MINS,
-            ),
-        )
-
         schema = vol.Schema(
             {
                 vol.Required(
@@ -67,18 +57,6 @@ class ZenbiOptionsFlowHandler(config_entries.OptionsFlow):
                         step=1,
                         mode=NumberSelectorMode.BOX,
                         unit_of_measurement="h",
-                    )
-                ),
-                vol.Required(
-                    CONF_NOTIFICATION_SYNC_INTERVAL_MINS,
-                    default=current_notification_mins,
-                ): NumberSelector(
-                    NumberSelectorConfig(
-                        min=1,
-                        max=1440,
-                        step=1,
-                        mode=NumberSelectorMode.BOX,
-                        unit_of_measurement="min",
                     )
                 ),
             }

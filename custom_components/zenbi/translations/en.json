@@ -34,8 +34,7 @@
         "title": "Zenbi Options",
         "description": "Configure synchronization intervals for Zenbi.",
         "data": {
-          "calendar_sync_interval_hours": "Calendar Sync Interval (hours)",
-          "notification_sync_interval_mins": "Notification Sync Interval (minutes)"
+          "calendar_sync_interval_hours": "Calendar Sync Interval (hours)"
         }
       }
     }

@@ -79,7 +79,7 @@ tests/
 - **Initial Setup**: Accepts username, password, and optional `unique_device_id`.
 - **Anti-Spam Login ID**: If device ID is omitted, computes a deterministic UUID (`uuid.uuid5(uuid.NAMESPACE_DNS, f"zenbi-device-{username.lower()}")`), eliminating "new browser login" security alert emails from Zenbi.
 - **Re-Authentication Flow**: Native `async_step_reauth` and `async_step_reauth_confirm` dialogs allow updating passwords directly without re-adding the integration.
-- **Options Flow**: Configurable `calendar_sync_interval_hours` (default 24h) and `notification_sync_interval_mins` (default 15m).
+- **Options Flow**: Configurable `calendar_sync_interval_hours` (default 6h).
 
 #### API Client Layer (`api/client.py`, `api/models.py`)
 - **Authentication**: Authenticates with two-factor null GUID (`00000000-0000-0000-0000-000000000000`) and device ID.
@@ -328,10 +328,15 @@ flowchart TD
 
 ---
 
-### Phase 9: Notification Platform & Unread Messages (Deferred)
-- [ ] **Notifications Endpoint**: Implement real API calls for `/api/notification/...` replacing the placeholder in `client.py`.
-- [ ] **Multi-Parent Targeting**: Design notification delivery to handle distinct parent accounts and notification channels.
-- [ ] **Sensor / Binary Sensor**: Add `binary_sensor.zenbi_unread_messages` tracking unread notices.
+### Phase 9: Sync Interval Tuning & Notification Code Cleanup (Completed)
+- [x] **Calendar Polling Interval**: Set default calendar sync interval to 6 hours (`DEFAULT_CALENDAR_SYNC_INTERVAL_HOURS = 6`).
+- [x] **Notification Cleanup**:
+  - Remove `CONF_NOTIFICATION_SYNC_INTERVAL_MINS` and `DEFAULT_NOTIFICATION_SYNC_INTERVAL_MINS` from `const.py`.
+  - Remove notification sync option from `options_flow.py` and `config_flow.py`.
+  - Remove `get_notifications` stub method from `api/client.py`.
+  - Remove notification translations from `strings.json`, `translations/da.json`, and `translations/en.json`.
+  - Remove notification options documentation from `README.md`.
+  - Update automated tests in `tests/test_api_client.py` and `tests/test_integration.py` (60/60 passing).
 
 
 

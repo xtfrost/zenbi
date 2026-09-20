@@ -7,11 +7,9 @@ CONF_USERNAME = "username"
 CONF_PASSWORD = "password"
 CONF_UNIQUE_DEVICE_ID = "unique_device_id"
 CONF_CALENDAR_SYNC_INTERVAL_HOURS = "calendar_sync_interval_hours"
-CONF_NOTIFICATION_SYNC_INTERVAL_MINS = "notification_sync_interval_mins"
 
 # Default values
-DEFAULT_CALENDAR_SYNC_INTERVAL_HOURS = 24
-DEFAULT_NOTIFICATION_SYNC_INTERVAL_MINS = 15
+DEFAULT_CALENDAR_SYNC_INTERVAL_HOURS = 6
 
 # API Defaults
 BASE_URL = "https://app.zenbi.dk"
