@@ -197,6 +197,8 @@ cards:
 ### On-Demand Attachment Downloads
 Zenbi attachment files (e.g. SFO calendars, classroom handouts, homework files) are served via an on-demand proxy endpoint (`/api/zenbi/file/{entry_id}/{file_id}`). When clicked from dashboard cards, Home Assistant automatically generates a fresh Azure Blob SAS token and redirects to the download, ensuring attachment links never expire.
 
+Links in `current_week_plan`, `next_week_plan`, and calendar event descriptions are formatted with `target="_blank"` and `download` attributes, allowing the browser to download files natively when clicked in Lovelace Markdown cards without navigating away from your dashboard.
+
 ---
 
 ## Standalone Diagnostic Script (`scripts/test_live.py`)

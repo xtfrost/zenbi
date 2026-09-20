@@ -11,6 +11,7 @@ from .models import (
     ZenbiPlanningMeta,
     ZenbiWeeklySchedule,
     parse_quill_delta,
+    strip_markdown,
 )
 
 __all__ = [
@@ -27,6 +28,7 @@ __all__ = [
     "ZenbiPlanningMeta",
     "ZenbiWeeklySchedule",
     "parse_quill_delta",
+    "strip_markdown",
     "format_zenbi_datetime",
     "get_copenhagen_tz",
 ]

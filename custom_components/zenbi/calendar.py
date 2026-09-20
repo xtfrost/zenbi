@@ -14,6 +14,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
+from .api.models import strip_markdown
 from .const import DOMAIN, slugify_name
 from .coordinator import (
     ZenbiCalendarData,
@@ -275,7 +276,7 @@ class ZenbiScheduleCalendarEntity(ZenbiBaseCalendarEntity):
                                 name = f.get("name") or f.get("title")
                                 if name and f_id:
                                     url = f"/api/zenbi/file/{self.entry.entry_id}/{f_id}"
-                                    file_links.append(f"[{name}]({url})")
+                                    file_links.append(f'<a href="{url}" target="_blank" download>{name}</a>')
                                 elif name:
                                     file_links.append(name)
                         if file_links:
@@ -553,7 +554,7 @@ class ZenbiWeeklyMessagesCalendarEntity(ZenbiBaseCalendarEntity):
                         name = f.get("name") or f.get("title")
                         if name and f_id:
                             url = f"/api/zenbi/file/{self.entry.entry_id}/{f_id}"
-                            file_links.append(f"[{name}]({url})")
+                            file_links.append(f'<a href="{url}" target="_blank" download>{name}</a>')
                         elif name:
                             file_links.append(name)
                 if file_links:
@@ -562,7 +563,7 @@ class ZenbiWeeklyMessagesCalendarEntity(ZenbiBaseCalendarEntity):
             return CalendarEvent(
                 start=start_date,
                 end=end_date,
-                summary=getattr(schedule, "title", "Weekly Message"),
+                summary=strip_markdown(getattr(schedule, "title", "Weekly Message")),
                 description="\n\n".join(desc_parts) if desc_parts else None,
                 uid=str(schedule.id),
             )

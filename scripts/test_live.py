@@ -105,7 +105,7 @@ def _format_weekly_plan_text(schedules: list, entry_id: str = "entry_id") -> str
                     if key not in seen_keys:
                         seen_keys.add(key)
                         if f_id:
-                            file_links.append(f"[{name}](/api/zenbi/file/{entry_id}/{f_id})")
+                            file_links.append(f'<a href="/api/zenbi/file/{entry_id}/{f_id}" target="_blank" download>{name}</a>')
                         else:
                             file_links.append(name)
 

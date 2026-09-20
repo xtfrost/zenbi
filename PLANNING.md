@@ -336,9 +336,20 @@ flowchart TD
   - Remove `get_notifications` stub method from `api/client.py`.
   - Remove notification translations from `strings.json`, `translations/da.json`, and `translations/en.json`.
   - Remove notification options documentation from `README.md`.
-  - Update automated tests in `tests/test_api_client.py` and `tests/test_integration.py` (60/60 passing).
 
+---
 
-
-
+### Phase 10: Markdown Title Stripping & Lovelace Download Link Fix (Completed)
+- [x] **Markdown Stripping Helper (`api/models.py`)**:
+  - Implement `strip_markdown(text: str) -> str` to strip bold (`**`, `__`), italics (`*`, `_`), headers (`#`), links (`[text](url)`), and list markers from line beginnings and endings.
+  - Update `ZenbiWeeklySchedule.from_dict` to use `strip_markdown` on candidate title lines, preventing trailing asterisks like `"Kære forældre i Pluto**"`.
+  - Update `calendar.py` weekly message event summary to apply `strip_markdown`.
+- [x] **Lovelace Markdown File Links (`sensor.py`, `calendar.py`, `scripts/test_live.py`)**:
+  - Replace standard relative markdown links `[name](/api/zenbi/file/...)` with `<a href="/api/zenbi/file/..." target="_blank" download>name</a>`.
+  - This prevents Home Assistant's frontend SPA router from intercepting clicks and redirecting to the default dashboard view, allowing native browser download.
+- [x] **Documentation & Dashboard Recommendations (`README.md`, `info.md`)**:
+  - Document link behavior and Lovelace card examples.
+- [x] **Automated Testing**:
+  - Added tests for `strip_markdown` with bold, italic, headers, and trailing asterisks.
+  - Updated integration tests for HTML download link formatting across sensors and calendar events (62/62 passing).
 

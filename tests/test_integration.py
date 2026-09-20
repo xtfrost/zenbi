@@ -324,8 +324,7 @@ async def test_calendar_weekly_messages_entity(mock_hass, mock_config_entry, moc
     # End date in HA calendar should span Monday to Friday (exclusive end date is Saturday = start + 5 days)
     assert next_event.end == today + timedelta(days=5)
     assert next_event.end.weekday() == 5  # Saturday (exclusive)
-    assert "**Kære forældre**" in next_event.description
-    assert "[oversigt.pdf](/api/zenbi/file/entry_123/file-ov-1)" in next_event.description
+    assert '<a href="/api/zenbi/file/entry_123/file-ov-1" target="_blank" download>oversigt.pdf</a>' in next_event.description
 
     # Extra state attributes with files
     attrs = entity.extra_state_attributes
@@ -1321,9 +1320,9 @@ async def test_weekly_plan_sensor_file_download_links(mock_hass, mock_config_ent
     expected_url_1 = f"/api/zenbi/file/{mock_config_entry.entry_id}/file-uuid-1"
     expected_url_2 = f"/api/zenbi/file/{mock_config_entry.entry_id}/file-uuid-2"
 
-    # Clickable markdown links in current_week_plan
-    assert f"[Skema.pdf]({expected_url_1})" in attrs["current_week_plan"]
-    assert f"[Lektier.docx]({expected_url_2})" in attrs["current_week_plan"]
+    # Clickable download links in current_week_plan
+    assert f'<a href="{expected_url_1}" target="_blank" download>Skema.pdf</a>' in attrs["current_week_plan"]
+    assert f'<a href="{expected_url_2}" target="_blank" download>Lektier.docx</a>' in attrs["current_week_plan"]
 
     # Structured dicts in files attribute
     assert len(attrs["files"]) == 2

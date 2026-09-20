@@ -287,7 +287,7 @@ class ZenbiWeeklyPlanSensor(
 
                 if file_id and entry_id:
                     url = f"/api/zenbi/file/{entry_id}/{file_id}"
-                    links.append(f"[{name}]({url})")
+                    links.append(f'<a href="{url}" target="_blank" download>{name}</a>')
                 else:
                     links.append(name)
         return links

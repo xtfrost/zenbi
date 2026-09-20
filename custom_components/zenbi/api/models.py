@@ -87,6 +87,24 @@ def parse_quill_delta(raw_text: str) -> str:
     return html.unescape(stripped)
 
 
+def strip_markdown(text: str) -> str:
+    """Strip markdown formatting syntax for clean plain-text titles and summaries."""
+    if not text or not isinstance(text, str):
+        return ""
+    # Strip markdown links [label](url) -> label
+    clean = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    # Strip bold and italic formatting: ***text***, **text**, *text*, ___text___, __text__, _text_
+    clean = re.sub(r"[*_]{1,3}([^*_]+)[*_]{1,3}", r"\1", clean)
+    # Strip HTML tags if any: <tag>text</tag> -> text
+    clean = re.sub(r"<[^>]+>", "", clean)
+    # Strip leading markdown symbols (#, -, *, >, numbers with dot)
+    clean = re.sub(r"^[\s#*\->]+", "", clean)
+    clean = re.sub(r"^\d+\.\s*", "", clean)
+    # Strip any remaining trailing/leading markdown or whitespace characters
+    clean = clean.strip("#*-_` \t\r\n")
+    return clean
+
+
 @dataclass
 class ZenbiAuthResponse:
     """Response payload from authentication endpoint."""
@@ -190,7 +208,7 @@ class ZenbiWeeklySchedule:
         title = ""
         if clean_desc:
             for line in clean_desc.splitlines():
-                clean_line = line.strip().lstrip("#*- \t")
+                clean_line = strip_markdown(line)
                 if clean_line:
                     title = clean_line[:80]
                     break

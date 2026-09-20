@@ -31,6 +31,7 @@ from custom_components.zenbi.api.models import (
     ZenbiWeeklySchedule,
     extract_student_names,
     parse_quill_delta,
+    strip_markdown,
 )
 from custom_components.zenbi.coordinator import calculate_rolling_window
 
@@ -585,5 +586,46 @@ async def test_get_weekly_schedule_file_download_url():
     mock_resp.json = AsyncMock(return_value={"name": "file.png"})
     with pytest.raises(ZenbiApiError, match="No download URI returned"):
         await client.get_weekly_schedule_file_download_url("file-456")
+
+
+def test_strip_markdown():
+    """Test stripping markdown formatting syntax from titles and summaries."""
+    # Bold and bold-italic
+    assert strip_markdown("**Kære forældre i Pluto**") == "Kære forældre i Pluto"
+    assert strip_markdown("***Vigtig besked***") == "Vigtig besked"
+    assert strip_markdown("__Understreget tekst__") == "Understreget tekst"
+    assert strip_markdown("*Kursiv tekst*") == "Kursiv tekst"
+
+    # Unbalanced / trailing asterisks
+    assert strip_markdown("Kære forældre i Pluto**") == "Kære forældre i Pluto"
+    assert strip_markdown("**Kære forældre i Pluto") == "Kære forældre i Pluto"
+
+    # Headers with formatting
+    assert strip_markdown("### **Uge 39 - Tema**") == "Uge 39 - Tema"
+    assert strip_markdown("# Overskrift") == "Overskrift"
+
+    # Links
+    assert strip_markdown("[Ugebrev](https://app.zenbi.dk)") == "Ugebrev"
+
+    # Lists
+    assert strip_markdown("- Punkt 1") == "Punkt 1"
+    assert strip_markdown("1. Første emne") == "Første emne"
+
+    # Empty / None
+    assert strip_markdown("") == ""
+    assert strip_markdown(None) == ""
+
+
+def test_weekly_schedule_bold_title_extraction():
+    """Test that a weekly schedule starting with bold text extracts a clean title without asterisks."""
+    data = {
+        "id": "ws-bold-1",
+        "start": "2026-09-21T00:00:00+02:00",
+        "end": "2026-09-28T00:00:00+02:00",
+        "description": '{"ops":[{"attributes":{"bold":true},"insert":"Kære forældre i Pluto\\n"},{"insert":"Her er ugens plan."}]}',
+    }
+    schedule = ZenbiWeeklySchedule.from_dict(data)
+    assert schedule.title == "Kære forældre i Pluto"
+
 
 
