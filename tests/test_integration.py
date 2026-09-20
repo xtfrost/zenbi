@@ -243,10 +243,12 @@ async def test_calendar_schedule_entity(mock_hass, mock_config_entry, mock_clien
     assert "Note: Bring text book" in next_event.description
     assert "Substitutes: Mrs. Jensen" in next_event.description
     assert "Resources: Room 402" in next_event.description
-    assert "### Lektier" in next_event.description
+    assert "Lektier:" in next_event.description
     assert "Afleveringsfrist:" in next_event.description
     assert "Read essay pages 10-15" in next_event.description
-    assert "essay_notes.pdf" in next_event.description
+    assert "Vedhæftede filer:\n- essay_notes.pdf" in next_event.description
+    assert "<a href=" not in next_event.description
+    assert "###" not in next_event.description
 
     # extra_state_attributes — files are now flattened to name strings (not raw dicts)
     attrs = entity.extra_state_attributes
@@ -326,7 +328,8 @@ async def test_calendar_weekly_messages_entity(mock_hass, mock_config_entry, moc
     # End date in HA calendar should span Monday to Friday (exclusive end date is Saturday = start + 5 days)
     assert next_event.end == today + timedelta(days=5)
     assert next_event.end.weekday() == 5  # Saturday (exclusive)
-    assert '<a href="/api/zenbi/file/entry_123/file-ov-1" target="_blank" download>oversigt.pdf</a>' in next_event.description
+    assert "Vedhæftede filer:\n- oversigt.pdf" in next_event.description
+    assert "<a href=" not in next_event.description
 
     # Extra state attributes with files
     attrs = entity.extra_state_attributes
@@ -1272,23 +1275,47 @@ async def test_zenbi_file_download_view(mock_hass, mock_config_entry, mock_clien
     mock_request = MagicMock()
     mock_request.app = {"hass": mock_hass}
 
-    # 1. Successful redirect (HTTP 302)
+    # 1. Successful stream with Content-Disposition: inline
     sas_url = "https://zenbistore.blob.core.windows.net/private-files/test.png?sas=token"
     mock_client.get_weekly_schedule_file_download_url = AsyncMock(return_value=sas_url)
 
+    mock_upstream_resp = MagicMock()
+    mock_upstream_resp.status = 200
+    mock_upstream_resp.headers = {
+        "Content-Type": "image/png",
+    }
+    mock_upstream_resp.read = AsyncMock(return_value=b"fake_png_data")
+
+    mock_session = MagicMock()
+    mock_session.get.return_value.__aenter__.return_value = mock_upstream_resp
+    mock_client._get_session.return_value = mock_session
+
     response = await view.get(mock_request, mock_config_entry.entry_id, "file-123")
-    assert response.status == 302
-    assert response.headers.get("Location") == sas_url
+    assert response.status == 200
+    assert response.headers["Content-Disposition"] == "inline"
+    assert response.headers["Content-Type"] == "image/png"
+    assert response.body == b"fake_png_data"
     mock_client.get_weekly_schedule_file_download_url.assert_called_with("file-123")
 
     # 2. Unknown entry_id -> 404
     resp_404 = await view.get(mock_request, "nonexistent_entry", "file-123")
     assert resp_404.status == 404
 
-    # 3. Client error -> 502
+    # 3. Client error getting download URL -> 502
     mock_client.get_weekly_schedule_file_download_url = AsyncMock(side_effect=ZenbiApiError("Upstream timeout"))
     resp_502 = await view.get(mock_request, mock_config_entry.entry_id, "file-123")
     assert resp_502.status == 502
+
+    # 4. Upstream storage non-200 -> mirrors status
+    mock_client.get_weekly_schedule_file_download_url = AsyncMock(return_value=sas_url)
+    mock_upstream_resp.status = 403
+    resp_403 = await view.get(mock_request, mock_config_entry.entry_id, "file-123")
+    assert resp_403.status == 403
+
+    # 5. Stream network failure -> 502
+    mock_session.get.side_effect = Exception("Connection reset")
+    resp_stream_err = await view.get(mock_request, mock_config_entry.entry_id, "file-123")
+    assert resp_stream_err.status == 502
 
 
 @pytest.mark.asyncio

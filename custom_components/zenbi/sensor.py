@@ -359,7 +359,7 @@ class ZenbiWeeklyPlanSensor(
                     )
                     images.append(img_html)
                 elif url:
-                    # Render non-image documents as download links
+                    # Render non-image documents as download links 
                     documents.append(f'<a href="{url}" target="_blank" download>{display_name}</a>')
                 else:
                     documents.append(display_name)

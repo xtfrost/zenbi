@@ -383,3 +383,22 @@ flowchart TD
   - Document the structured `files` attribute schema and file extension display.
 - [x] **Automated Testing**:
   - Added tests in `tests/test_integration.py` verifying display name extension appending for non-image files, preservation of image names, and `files` attribute schema (64/64 passing).
+
+---
+
+### Phase 13: Clean Plain-Text Calendar Descriptions & Inline Browser File Previews (Completed)
+- [x] **Clean Plain-Text Calendar Descriptions (`calendar.py`)**:
+  - Remove raw HTML tags (`<a href...>`) and markdown formatting (`###`, `**bold**`, `---`) from CalendarEvent descriptions.
+  - Render clean, human-readable plain text:
+    - `Lektier:` instead of `### Lektier`
+    - `Afleveringsfrist: {date}` instead of `**Afleveringsfrist:**`
+    - `Oprettet / opdateret: {date}` instead of `**Oprettet / opdateret:**`
+    - Bullet list of file attachment names (`- {display_name}`) without raw HTML link tags.
+- [x] **Inline Browser File Previews (`http.py`)**:
+  - Proxy upstream files directly with `Content-Disposition: inline`, `Cache-Control`, and appropriate `Content-Type`.
+  - Override Azure Blob SAS URL's forced `rscd=attachment` without breaking SAS token signature.
+  - Browsers now preview images full size in the browser tab when opening attachments, rather than triggering an unwanted file download dialog.
+- [x] **Automated Testing**:
+  - Updated calendar event tests in `tests/test_integration.py` to verify clean plain-text descriptions without HTML or markdown asterisks.
+  - Updated and added HTTP view tests verifying `Content-Disposition: inline` and body forwarding (64/64 passing).
+

@@ -258,37 +258,30 @@ class ZenbiScheduleCalendarEntity(ZenbiBaseCalendarEntity):
                     if getattr(hw, "date", None):
                         clean_d = _format_date_clean(hw.date)
                         if clean_d:
-                            meta_lines.append(f"**Afleveringsfrist:** {clean_d}")
+                            meta_lines.append(f"Afleveringsfrist: {clean_d}")
                     if getattr(hw, "updated_time", None):
                         clean_u = _format_date_clean(hw.updated_time)
                         if clean_u:
-                            meta_lines.append(f"**Oprettet / opdateret:** {clean_u}")
+                            meta_lines.append(f"Oprettet / opdateret: {clean_u}")
                     if meta_lines:
                         section.append("\n".join(meta_lines))
 
                     if hw.description:
-                        section.append(hw.description)
+                        section.append(strip_markdown(hw.description))
 
                     if hw.files:
-                        file_links: List[str] = []
+                        file_names: List[str] = []
                         for f in hw.files:
                             if isinstance(f, dict):
-                                f_id = f.get("id") or f.get("fileId")
-                                name = f.get("name") or f.get("title")
-                                display_name = format_attachment_display_name(f)
-                                if name and f_id:
-                                    url = f"/api/zenbi/file/{self.entry.entry_id}/{f_id}"
-                                    file_links.append(f'<a href="{url}" target="_blank" download>{display_name}</a>')
-                                elif name:
-                                    file_links.append(display_name)
-                        if file_links:
-                            section.append("Vedhæftede filer:\n" + "\n".join(f"- {fl}" for fl in file_links))
+                                file_names.append(format_attachment_display_name(f))
+                        if file_names:
+                            section.append("Vedhæftede filer:\n" + "\n".join(f"- {fn}" for fn in file_names))
 
                     if section:
                         hw_sections.append("\n\n".join(section))
 
                 if hw_sections:
-                    desc_parts.append("### Lektier\n\n" + "\n\n---\n\n".join(hw_sections))
+                    desc_parts.append("Lektier:\n\n" + "\n\n----------------\n\n".join(hw_sections))
 
             return CalendarEvent(
                 start=start_dt,
@@ -546,22 +539,15 @@ class ZenbiWeeklyMessagesCalendarEntity(ZenbiBaseCalendarEntity):
 
             desc_parts: List[str] = []
             if getattr(schedule, "description", None):
-                desc_parts.append(schedule.description)
+                desc_parts.append(strip_markdown(schedule.description))
 
             if getattr(schedule, "files", None):
-                file_links: List[str] = []
+                file_names: List[str] = []
                 for f in schedule.files:
                     if isinstance(f, dict):
-                        f_id = f.get("id") or f.get("fileId")
-                        name = f.get("name") or f.get("title")
-                        display_name = format_attachment_display_name(f)
-                        if name and f_id:
-                            url = f"/api/zenbi/file/{self.entry.entry_id}/{f_id}"
-                            file_links.append(f'<a href="{url}" target="_blank" download>{display_name}</a>')
-                        elif name:
-                            file_links.append(display_name)
-                if file_links:
-                    desc_parts.append(f"Vedhæftede filer:\n" + "\n".join(f"- {fl}" for fl in file_links))
+                        file_names.append(format_attachment_display_name(f))
+                if file_names:
+                    desc_parts.append(f"Vedhæftede filer:\n" + "\n".join(f"- {fn}" for fn in file_names))
 
             return CalendarEvent(
                 start=start_date,
