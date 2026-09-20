@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.config_entries import ConfigEntry
@@ -19,6 +19,65 @@ from .const import DOMAIN, slugify_name
 from .coordinator import ZenbiCalendarDataUpdateCoordinator, ZenbiWeeklySchedule
 
 _LOGGER = logging.getLogger(__name__)
+
+IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"}
+
+
+def is_image_file(file_info: Any = None, filename: Optional[str] = None) -> bool:
+    """Check if a file is an image using its extension field, contentType, or filename."""
+    if isinstance(file_info, dict):
+        # 1. Check explicit extension field from Zenbi API (e.g. "extension": "png")
+        ext = file_info.get("extension")
+        if isinstance(ext, str) and ext.strip().lstrip(".").lower() in IMAGE_EXTENSIONS:
+            return True
+
+        # 2. Check contentType / mimeType (e.g. "image/png")
+        mime = file_info.get("contentType") or file_info.get("mimeType") or ""
+        if isinstance(mime, str) and mime.lower().startswith("image/"):
+            return True
+
+        # 3. Check name or title inside file_info dict
+        candidate = file_info.get("name") or file_info.get("title")
+        if candidate and isinstance(candidate, str):
+            clean_name = candidate.lower().split("?")[0].strip()
+            if any(clean_name.endswith(f".{e}") for e in IMAGE_EXTENSIONS):
+                return True
+
+    # 4. Check explicit filename or string argument
+    target_name = filename if filename is not None else (file_info if isinstance(file_info, str) else None)
+    if target_name and isinstance(target_name, str):
+        clean_name = target_name.lower().split("?")[0].strip()
+        if any(clean_name.endswith(f".{e}") for e in IMAGE_EXTENSIONS):
+            return True
+
+    return False
+
+
+is_image_filename = is_image_file
+
+
+def format_attachment_display_name(
+    file_info: Any, is_image: Optional[bool] = None
+) -> str:
+    """Format file display name, appending the file extension for non-image files if missing."""
+    if not isinstance(file_info, dict):
+        return str(file_info or "Vedhæftet fil")
+
+    name = file_info.get("name") or file_info.get("title") or "Vedhæftet fil"
+    if not isinstance(name, str):
+        name = str(name)
+
+    if is_image is None:
+        is_image = is_image_file(file_info, name)
+
+    if not is_image:
+        ext = file_info.get("extension")
+        if isinstance(ext, str):
+            clean_ext = ext.strip().lstrip(".")
+            if clean_ext and not name.lower().endswith(f".{clean_ext.lower()}"):
+                name = f"{name}.{clean_ext}"
+
+    return name
 
 
 async def async_setup_entry(
@@ -266,12 +325,14 @@ class ZenbiWeeklyPlanSensor(
         return active_schedules, next_schedules
 
     @classmethod
-    def _format_attachment_links(
+    def _partition_attachments(
         cls, schedules: List[ZenbiWeeklySchedule], entry_id: Optional[str] = None
-    ) -> List[str]:
-        """Format markdown links for unique files across schedules."""
+    ) -> Tuple[List[str], List[str]]:
+        """Partition unique schedule attachments into inline image HTML and document links."""
         seen_keys = set()
-        links: List[str] = []
+        images: List[str] = []
+        documents: List[str] = []
+
         for s in schedules:
             if not s.files:
                 continue
@@ -285,20 +346,41 @@ class ZenbiWeeklyPlanSensor(
                     continue
                 seen_keys.add(key)
 
-                if file_id and entry_id:
-                    url = f"/api/zenbi/file/{entry_id}/{file_id}"
-                    links.append(f'<a href="{url}" target="_blank" download>{name}</a>')
+                url = f"/api/zenbi/file/{entry_id}/{file_id}" if file_id and entry_id else ""
+                is_img = is_image_file(f, name)
+                display_name = format_attachment_display_name(f, is_image=is_img)
+
+                if is_img and url:
+                    # Render inline image wrapped in a link to open full-resolution in a new tab
+                    img_html = (
+                        f'<a href="{url}" target="_blank" title="{display_name}">'
+                        f'<img src="{url}" alt="{display_name}" style="max-width: 100%; border-radius: 8px; margin-top: 8px;" />'
+                        f'</a>'
+                    )
+                    images.append(img_html)
+                elif url:
+                    # Render non-image documents as download links
+                    documents.append(f'<a href="{url}" target="_blank" download>{display_name}</a>')
                 else:
-                    links.append(name)
-        return links
+                    documents.append(display_name)
+
+        return images, documents
+
+    @classmethod
+    def _format_attachment_links(
+        cls, schedules: List[ZenbiWeeklySchedule], entry_id: Optional[str] = None
+    ) -> List[str]:
+        """Format links for unique files across schedules (for backwards compatibility)."""
+        images, documents = cls._partition_attachments(schedules, entry_id)
+        return images + documents
 
     @classmethod
     def _format_plan_text(
         cls, schedules: List[ZenbiWeeklySchedule], entry_id: Optional[str] = None
     ) -> str:
-        """Format plan text, merging multiple messages or listing attachments if text is empty."""
+        """Format plan text, merging multiple messages, rendering images inline and documents under downloads."""
         with_desc = [s for s in schedules if s.description and s.description.strip()]
-        file_links = cls._format_attachment_links(schedules, entry_id)
+        images, documents = cls._partition_attachments(schedules, entry_id)
 
         main_text = ""
         if len(with_desc) == 1:
@@ -310,18 +392,21 @@ class ZenbiWeeklyPlanSensor(
                 sections.append(f"# {title}\n\n{s.description.strip()}")
             main_text = "\n\n---\n\n".join(sections)
 
+        parts: List[str] = []
         if main_text:
-            if file_links:
-                file_list = "\n".join(f"- {link}" for link in file_links)
-                return f"{main_text}\n\n### Vedhæftede filer\n{file_list}"
-            return main_text
+            parts.append(main_text)
 
-        # No messages have descriptions -> list files if any exist
-        if file_links:
-            file_list = "\n".join(f"- {link}" for link in file_links)
-            return f"*Vedhæftede filer til denne uge:*\n{file_list}"
+        if images:
+            parts.append("\n\n".join(images))
 
-        return ""
+        if documents:
+            doc_list = "\n".join(f"- {doc}" for doc in documents)
+            if main_text or images:
+                parts.append(f"### Vedhæftede filer\n{doc_list}")
+            else:
+                parts.append(f"*Vedhæftede filer til denne uge:*\n{doc_list}")
+
+        return "\n\n".join(parts)
 
     @property
     def native_value(self) -> Optional[str]:
@@ -365,11 +450,21 @@ class ZenbiWeeklyPlanSensor(
                     for f in s.files:
                         if isinstance(f, dict):
                             file_id = f.get("id") or f.get("fileId")
-                            name = f.get("name") or f.get("title")
-                            key = file_id or name
+                            raw_name = f.get("name") or f.get("title")
+                            key = file_id or raw_name
                             if key and key not in seen_file_keys:
                                 seen_file_keys.add(key)
-                                item: Dict[str, Any] = {"name": name}
+                                is_img = is_image_file(f, raw_name)
+                                display_name = format_attachment_display_name(f, is_image=is_img)
+                                item: Dict[str, Any] = {
+                                    "name": display_name,
+                                    "is_image": is_img,
+                                }
+                                ext = f.get("extension")
+                                if isinstance(ext, str) and ext.strip():
+                                    item["extension"] = ext.strip().lstrip(".")
+                                if f.get("size") is not None:
+                                    item["size"] = f["size"]
                                 if file_id:
                                     item["id"] = file_id
                                     item["url"] = f"/api/zenbi/file/{entry_id}/{file_id}"

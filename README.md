@@ -117,7 +117,7 @@ When an account is connected, Zenbi automatically discovers all enrolled childre
 Here are ready-to-use Lovelace dashboard configurations to get the most out of your Zenbi school data.
 
 ### 1. Weekly Plan (Ugeplan) Markdown Card
-Renders the active week's plan with rich formatting, clickable file attachment links, and an optional preview of next week:
+Renders the active week's plan with rich formatting, inline image previews (PNG, JPG, etc.), clickable file attachment download links (with file extensions like `.pdf`), and an optional preview of next week:
 
 ```yaml
 type: markdown
@@ -131,6 +131,18 @@ content: >-
   {{ state_attr('sensor.zenbi_weekly_plan', 'next_week_plan') }}
   {% endif %}
 ```
+
+> [!TIP]
+> **Attached Files Attribute**: The sensor also exposes a structured `files` attribute list for custom dashboard cards or automation scripts:
+> ```yaml
+> # Example items in state_attr('sensor.zenbi_weekly_plan', 'files'):
+> # - name: "Fritter-kalender-26-27-uge-37.pdf"
+> #   extension: "pdf"
+> #   size: 176406
+> #   is_image: false
+> #   url: "/api/zenbi/file/<entry_id>/<file_id>"
+> ```
+
 
 ### 2. Timed Class Schedule (Calendar Card)
 Displays daily class schedule alongside school holidays and semester milestones:
@@ -194,10 +206,12 @@ cards:
 > [!TIP]
 > If you have multiple children enrolled in Zenbi, their entities will automatically include their name slug (e.g. `calendar.zenbi_albert_schedule`, `todo.zenbi_albert_homework`, and `sensor.zenbi_albert_weekly_plan`). Simply substitute the entity ID corresponding to each child.
 
-### On-Demand Attachment Downloads
+### On-Demand Attachment Downloads & Inline Images
 Zenbi attachment files (e.g. SFO calendars, classroom handouts, homework files) are served via an on-demand proxy endpoint (`/api/zenbi/file/{entry_id}/{file_id}`). When clicked from dashboard cards, Home Assistant automatically generates a fresh Azure Blob SAS token and redirects to the download, ensuring attachment links never expire.
 
-Links in `current_week_plan`, `next_week_plan`, and calendar event descriptions are formatted with `target="_blank"` and `download` attributes, allowing the browser to download files natively when clicked in Lovelace Markdown cards without navigating away from your dashboard.
+- **Inline Images**: Image attachments (`.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`) attached to teacher letters are automatically embedded as responsive inline images directly inside the Weekly Plan Markdown sensor, with clickable links to view them full-resolution in a new tab.
+- **Document Downloads**: Non-image documents (`.pdf`, `.docx`, etc.) appear under `### Vedhæftede filer` formatted with `target="_blank"` and `download` attributes so clicking them initiates native downloads without navigating away from your dashboard.
+- **SAS Caching**: Generated download URLs are cached in-memory for 50 minutes, ensuring fast image loads on dashboards with minimal API calls.
 
 ---
 

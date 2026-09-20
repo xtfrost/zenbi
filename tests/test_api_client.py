@@ -577,6 +577,22 @@ async def test_get_weekly_schedule_file_download_url():
 
     url = await client.get_weekly_schedule_file_download_url("file-123")
     assert url == "https://zenbistore.blob.core.windows.net/test/file.png?sas=token"
+    assert mock_session.request.call_count == 1
+
+    # Second call should return cached SAS URL without requesting upstream again
+    cached_url = await client.get_weekly_schedule_file_download_url("file-123")
+    assert cached_url == url
+    assert mock_session.request.call_count == 1
+
+    # Simulate cache expiry
+    client._sas_url_cache["file-123"] = (url, time.time() - 10)
+    await client.get_weekly_schedule_file_download_url("file-123")
+    assert mock_session.request.call_count == 2
+
+    # Verify close() clears cache
+    assert len(client._sas_url_cache) > 0
+    await client.close()
+    assert len(client._sas_url_cache) == 0
 
     # Missing file_id
     with pytest.raises(ZenbiApiError, match="Missing file ID"):

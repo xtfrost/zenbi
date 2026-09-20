@@ -39,6 +39,8 @@ from custom_components.zenbi.todo import (
 from custom_components.zenbi.sensor import (
     ZenbiLastSyncedSensor,
     ZenbiWeeklyPlanSensor,
+    format_attachment_display_name,
+    is_image_file,
     async_setup_entry as async_setup_sensor_entry,
 )
 from custom_components.zenbi.http import ZenbiFileDownloadView
@@ -333,6 +335,7 @@ async def test_calendar_weekly_messages_entity(mock_hass, mock_config_entry, moc
             "name": "oversigt.pdf",
             "id": "file-ov-1",
             "url": "/api/zenbi/file/entry_123/file-ov-1",
+            "is_image": False,
         }
     ]
 
@@ -1186,7 +1189,7 @@ async def test_weekly_plan_sensor_attributes(mock_hass, mock_config_entry, mock_
     # Current week markdown
     assert "current_week_plan" in attrs
     assert "H.C. Andersen" in attrs["current_week_plan"]
-    assert attrs["files"] == [{"name": "hc_andersen_tekst.pdf"}]
+    assert attrs["files"] == [{"name": "hc_andersen_tekst.pdf", "is_image": False}]
 
     # Next week markdown
     assert "next_week_plan" in attrs
@@ -1305,8 +1308,9 @@ async def test_weekly_plan_sensor_file_download_links(mock_hass, mock_config_ent
         description="Velkommen til en ny uge.",
         raw_description="",
         files=[
-            {"id": "file-uuid-1", "name": "Skema.pdf"},
-            {"fileId": "file-uuid-2", "name": "Lektier.docx"},
+            {"id": "file-uuid-img", "name": "Skema.png"},
+            {"id": "file-uuid-hold", "name": "Hold (1)", "extension": "png"},
+            {"fileId": "file-uuid-doc", "name": "Lektier", "extension": "pdf"},
         ],
     )
     coordinator.data = ZenbiCalendarData(
@@ -1317,25 +1321,64 @@ async def test_weekly_plan_sensor_file_download_links(mock_hass, mock_config_ent
     sensor = ZenbiWeeklyPlanSensor(coordinator, mock_config_entry, student_name="Albert Hansen")
     attrs = sensor.extra_state_attributes
 
-    expected_url_1 = f"/api/zenbi/file/{mock_config_entry.entry_id}/file-uuid-1"
-    expected_url_2 = f"/api/zenbi/file/{mock_config_entry.entry_id}/file-uuid-2"
+    expected_url_img = f"/api/zenbi/file/{mock_config_entry.entry_id}/file-uuid-img"
+    expected_url_hold = f"/api/zenbi/file/{mock_config_entry.entry_id}/file-uuid-hold"
+    expected_url_doc = f"/api/zenbi/file/{mock_config_entry.entry_id}/file-uuid-doc"
 
-    # Clickable download links in current_week_plan
-    assert f'<a href="{expected_url_1}" target="_blank" download>Skema.pdf</a>' in attrs["current_week_plan"]
-    assert f'<a href="{expected_url_2}" target="_blank" download>Lektier.docx</a>' in attrs["current_week_plan"]
+    # Inline image rendering in current_week_plan for both extension in name and in extension field
+    assert f'<a href="{expected_url_img}" target="_blank" title="Skema.png">' in attrs["current_week_plan"]
+    assert f'<img src="{expected_url_img}" alt="Skema.png"' in attrs["current_week_plan"]
 
-    # Structured dicts in files attribute
-    assert len(attrs["files"]) == 2
+    assert f'<a href="{expected_url_hold}" target="_blank" title="Hold (1)">' in attrs["current_week_plan"]
+    assert f'<img src="{expected_url_hold}" alt="Hold (1)"' in attrs["current_week_plan"]
+
+    # Non-image document download link under Vedhæftede filer
+    assert "### Vedhæftede filer" in attrs["current_week_plan"]
+    assert f'<a href="{expected_url_doc}" target="_blank" download>Lektier.pdf</a>' in attrs["current_week_plan"]
+
+    # Structured dicts in files attribute with is_image tag and extension metadata
+    assert len(attrs["files"]) == 3
     assert attrs["files"][0] == {
-        "name": "Skema.pdf",
-        "id": "file-uuid-1",
-        "url": expected_url_1,
+        "name": "Skema.png",
+        "id": "file-uuid-img",
+        "url": expected_url_img,
+        "is_image": True,
     }
     assert attrs["files"][1] == {
-        "name": "Lektier.docx",
-        "id": "file-uuid-2",
-        "url": expected_url_2,
+        "name": "Hold (1)",
+        "id": "file-uuid-hold",
+        "url": expected_url_hold,
+        "is_image": True,
+        "extension": "png",
     }
+    assert attrs["files"][2] == {
+        "name": "Lektier.pdf",
+        "id": "file-uuid-doc",
+        "url": expected_url_doc,
+        "is_image": False,
+        "extension": "pdf",
+    }
+
+    # Test image-only schedule (no text description)
+    sched_img_only = ZenbiWeeklySchedule(
+        id="ws-img-only",
+        title="Foto-brev.jpg",
+        start=start_cur,
+        end=end_cur,
+        description="",
+        raw_description="",
+        files=[{"id": "file-img-2", "name": "Foto-brev.jpg"}],
+    )
+    coordinator.data = ZenbiCalendarData(
+        students=["Albert Hansen"],
+        weekly_schedules=[sched_img_only],
+    )
+    sensor_img_only = ZenbiWeeklyPlanSensor(coordinator, mock_config_entry, student_name="Albert Hansen")
+    attrs_img_only = sensor_img_only.extra_state_attributes
+    url_img_2 = f"/api/zenbi/file/{mock_config_entry.entry_id}/file-img-2"
+    assert f'<img src="{url_img_2}" alt="Foto-brev.jpg"' in attrs_img_only["current_week_plan"]
+    # Should not have Vedhæftede filer header since there are no non-image documents
+    assert "### Vedhæftede filer" not in attrs_img_only["current_week_plan"]
 
 
 @pytest.mark.asyncio
@@ -1481,6 +1524,95 @@ async def test_coordinator_on_demand_calendar_ttl_cache(mock_hass, mock_config_e
     # Test cache shutdown cleanup
     await coordinator.async_shutdown()
     assert coordinator._on_demand_cache == {}
+
+
+def test_is_image_file_detection():
+    """Test is_image_file correctly identifies images using extension, contentType, or name."""
+    # Extension in separate field (Zenbi API structure)
+    assert is_image_file({"name": "Hold (1)", "extension": "png"}) is True
+    assert is_image_file({"name": "Fritter-kalender-26-27-uge-37", "extension": "png"}) is True
+    assert is_image_file({"name": "Foto", "extension": "JPG"}) is True
+    assert is_image_file({"name": "Forældrebrev Blokdag", "extension": "pdf"}) is False
+    assert is_image_file({"name": "Vejledning", "extension": "docx"}) is False
+
+    # MIME type
+    assert is_image_file({"name": "Ukendt", "contentType": "image/png"}) is True
+    assert is_image_file({"name": "Ukendt", "mimeType": "image/jpeg"}) is True
+    assert is_image_file({"name": "Ukendt", "contentType": "application/pdf"}) is False
+
+    # Extension in name
+    assert is_image_file({"name": "Skema.png"}) is True
+    assert is_image_file({"name": "Billede.JPG"}) is True
+    assert is_image_file({"name": "Oversigt.pdf"}) is False
+
+    # Direct filename string
+    assert is_image_file("billede.webp") is True
+    assert is_image_file("dokument.pdf") is False
+    assert is_image_file(None) is False
+
+
+def test_format_attachment_display_name():
+    """Test format_attachment_display_name formats non-images with extension and leaves images clean."""
+    # Non-images without extension in name: should append extension
+    assert (
+        format_attachment_display_name(
+            {"name": "Fritter-kalender-26-27-uge-37", "extension": "pdf"}
+        )
+        == "Fritter-kalender-26-27-uge-37.pdf"
+    )
+    assert (
+        format_attachment_display_name(
+            {"name": "Vejledning", "extension": "docx"}
+        )
+        == "Vejledning.docx"
+    )
+    assert (
+        format_attachment_display_name(
+            {"name": "Regnskab", "extension": ".xlsx"}
+        )
+        == "Regnskab.xlsx"
+    )
+
+    # Non-images that already have extension in name: do NOT double append
+    assert (
+        format_attachment_display_name(
+            {"name": "Fritter-kalender.pdf", "extension": "pdf"}
+        )
+        == "Fritter-kalender.pdf"
+    )
+    assert (
+        format_attachment_display_name(
+            {"name": "Fritter-kalender.PDF", "extension": "pdf"}
+        )
+        == "Fritter-kalender.PDF"
+    )
+
+    # Images: should NOT append extension if missing, keep clean visual title
+    assert (
+        format_attachment_display_name(
+            {"name": "Hold (1)", "extension": "png"}
+        )
+        == "Hold (1)"
+    )
+    assert (
+        format_attachment_display_name(
+            {"name": "Foto", "extension": "jpg"}
+        )
+        == "Foto"
+    )
+    # Images with extension already in name
+    assert (
+        format_attachment_display_name(
+            {"name": "Skema.png", "extension": "png"}
+        )
+        == "Skema.png"
+    )
+
+    # Fallbacks and edge cases
+    assert format_attachment_display_name({"name": "Dokument"}) == "Dokument"
+    assert format_attachment_display_name(None) == "Vedhæftet fil"
+    assert format_attachment_display_name("fil.pdf") == "fil.pdf"
+
 
 
 

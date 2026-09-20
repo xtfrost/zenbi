@@ -107,6 +107,7 @@ class ZenbiApiClient:
         self._token_expiry: Optional[float] = token_expiry or (_decode_jwt_exp(token) if token else None)
         self._timeframe_id: Optional[str] = None
         self._user_id: Optional[str] = None
+        self._sas_url_cache: Dict[str, Tuple[str, float]] = {}
 
     @property
     def token(self) -> Optional[str]:
@@ -363,9 +364,15 @@ class ZenbiApiClient:
         return [ZenbiWeeklySchedule.from_dict(item) for item in items_raw]
 
     async def get_weekly_schedule_file_download_url(self, file_id: str) -> str:
-        """Fetch fresh Azure Blob SAS download URL for an attachment file."""
+        """Fetch fresh Azure Blob SAS download URL for an attachment file with in-memory caching."""
         if not file_id:
             raise ZenbiApiError("Missing file ID")
+
+        now = time.time()
+        if file_id in self._sas_url_cache:
+            cached_url, expiry = self._sas_url_cache[file_id]
+            if now < expiry:
+                return cached_url
 
         data = await self._request(
             "GET",
@@ -375,10 +382,14 @@ class ZenbiApiClient:
         if not isinstance(data, dict) or not data.get("uri"):
             raise ZenbiApiError(f"No download URI returned for file ID {file_id}")
 
-        return str(data["uri"])
+        uri = str(data["uri"])
+        # Cache for 50 minutes (Azure Blob SAS tokens are typically valid for 1-2 hours)
+        self._sas_url_cache[file_id] = (uri, now + 3000)
+        return uri
 
     async def close(self) -> None:
         """Close client session if owned by this client."""
+        self._sas_url_cache.clear()
         if self._owns_session and self._session and not self._session.closed:
             await self._session.close()
 

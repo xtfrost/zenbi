@@ -21,6 +21,7 @@ from .coordinator import (
     ZenbiCalendarDataUpdateCoordinator,
     ZenbiCalendarItem,
 )
+from .sensor import format_attachment_display_name, is_image_file
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -274,11 +275,12 @@ class ZenbiScheduleCalendarEntity(ZenbiBaseCalendarEntity):
                             if isinstance(f, dict):
                                 f_id = f.get("id") or f.get("fileId")
                                 name = f.get("name") or f.get("title")
+                                display_name = format_attachment_display_name(f)
                                 if name and f_id:
                                     url = f"/api/zenbi/file/{self.entry.entry_id}/{f_id}"
-                                    file_links.append(f'<a href="{url}" target="_blank" download>{name}</a>')
+                                    file_links.append(f'<a href="{url}" target="_blank" download>{display_name}</a>')
                                 elif name:
-                                    file_links.append(name)
+                                    file_links.append(display_name)
                         if file_links:
                             section.append("Vedhæftede filer:\n" + "\n".join(f"- {fl}" for fl in file_links))
 
@@ -552,11 +554,12 @@ class ZenbiWeeklyMessagesCalendarEntity(ZenbiBaseCalendarEntity):
                     if isinstance(f, dict):
                         f_id = f.get("id") or f.get("fileId")
                         name = f.get("name") or f.get("title")
+                        display_name = format_attachment_display_name(f)
                         if name and f_id:
                             url = f"/api/zenbi/file/{self.entry.entry_id}/{f_id}"
-                            file_links.append(f'<a href="{url}" target="_blank" download>{name}</a>')
+                            file_links.append(f'<a href="{url}" target="_blank" download>{display_name}</a>')
                         elif name:
-                            file_links.append(name)
+                            file_links.append(display_name)
                 if file_links:
                     desc_parts.append(f"Vedhæftede filer:\n" + "\n".join(f"- {fl}" for fl in file_links))
 
@@ -589,8 +592,17 @@ class ZenbiWeeklyMessagesCalendarEntity(ZenbiBaseCalendarEntity):
                     for f in s.files:
                         if isinstance(f, dict):
                             f_id = f.get("id") or f.get("fileId")
-                            name = f.get("name") or f.get("title") or "Vedhæftet fil"
-                            item: Dict[str, Any] = {"name": name}
+                            display_name = format_attachment_display_name(f)
+                            is_img = is_image_file(f)
+                            item: Dict[str, Any] = {
+                                "name": display_name,
+                                "is_image": is_img,
+                            }
+                            ext = f.get("extension")
+                            if isinstance(ext, str) and ext.strip():
+                                item["extension"] = ext.strip().lstrip(".")
+                            if f.get("size") is not None:
+                                item["size"] = f["size"]
                             if f_id:
                                 item["id"] = f_id
                                 item["url"] = f"/api/zenbi/file/{self.entry.entry_id}/{f_id}"

@@ -351,5 +351,35 @@ flowchart TD
   - Document link behavior and Lovelace card examples.
 - [x] **Automated Testing**:
   - Added tests for `strip_markdown` with bold, italic, headers, and trailing asterisks.
-  - Updated integration tests for HTML download link formatting across sensors and calendar events (62/62 passing).
 
+---
+
+### Phase 11: Inline Image Rendering in Weekly Plan & SAS Caching (Completed)
+- [x] **Image Detection & Inline Rendering (`sensor.py`)**:
+  - Add image file detection helper (`is_image_filename`).
+  - Partition weekly plan attachments into images vs. documents.
+  - Render image attachments inline at full width (`max-width: 100%; border-radius: 8px`) wrapped in `<a href="..." target="_blank">` to open full-resolution in a new tab.
+  - Render non-image documents (PDFs, docs) under `### Vedhæftede filer` as download links.
+  - Handle image-only plans gracefully where no description text exists.
+- [x] **SAS URL Caching (`api/client.py`)**:
+  - Implement an in-memory TTL cache (50 minutes) in `get_weekly_schedule_file_download_url` to avoid redundant API queries when images are rendered on dashboards.
+- [x] **Documentation (`README.md`, `info.md`)**:
+  - Document inline image rendering and Lovelace card appearance.
+- [x] **Automated Testing**:
+  - Added unit and integration tests verifying image detection, inline HTML rendering, document separation, and SAS URL caching (63/63 passing).
+
+---
+
+### Phase 12: Non-Image File Extension Normalization & Attachment Metadata Enrichment (Completed)
+- [x] **File Display Name Formatting (`sensor.py`, `calendar.py`)**:
+  - Add helper `format_attachment_display_name(file_info: Dict[str, Any], is_image: bool = False) -> str`.
+  - When an attachment is not an image and has an `extension` field (e.g., `"pdf"`, `"docx"`), append `.{extension}` to its display name if not already present.
+  - Keep image attachment display names clean without forcing redundant file extensions into visual titles.
+- [x] **Weekly Plan Sensor Attributes Enrichment (`sensor.py`)**:
+  - In `attrs["files"]`, include structured metadata: `name` (formatted display name), `extension`, `size` (bytes), `is_image` (bool), `id`, and proxy `url`.
+- [x] **Calendar Entity Formatting (`calendar.py`)**:
+  - Update homework attachment downloads in `ZenbiScheduleCalendarEntity` and weekly message attachment downloads / attributes in `ZenbiWeeklyMessagesCalendarEntity` to use `format_attachment_display_name`.
+- [x] **Documentation (`README.md`)**:
+  - Document the structured `files` attribute schema and file extension display.
+- [x] **Automated Testing**:
+  - Added tests in `tests/test_integration.py` verifying display name extension appending for non-image files, preservation of image names, and `files` attribute schema (64/64 passing).
