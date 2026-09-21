@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -252,10 +252,21 @@ class ZenbiWeeklyPlanSensor(
             start_d = p.date() if p else dt_util.parse_date(schedule.start)
 
         if schedule.end_dt:
-            end_d = schedule.end_dt.date()
+            # If end time is midnight (00:00:00), the week ended as this day began (exclusive boundary).
+            # Subtract 1 second so the effective inclusive end date is Sunday, not Monday.
+            if schedule.end_dt.hour == 0 and schedule.end_dt.minute == 0 and schedule.end_dt.second == 0:
+                end_d = (schedule.end_dt - timedelta(seconds=1)).date()
+            else:
+                end_d = schedule.end_dt.date()
         elif schedule.end:
             p = dt_util.parse_datetime(schedule.end)
-            end_d = p.date() if p else dt_util.parse_date(schedule.end)
+            if p:
+                if p.hour == 0 and p.minute == 0 and p.second == 0:
+                    end_d = (p - timedelta(seconds=1)).date()
+                else:
+                    end_d = p.date()
+            else:
+                end_d = dt_util.parse_date(schedule.end)
 
         return start_d, end_d
 
@@ -288,12 +299,18 @@ class ZenbiWeeklyPlanSensor(
         active_window_start: Optional[date] = None
         active_window_end: Optional[date] = None
 
+        # Find all schedule windows that cover today.
+        # If multiple windows cover today, sort by start_d and pick the latest one
+        # so that a newly starting week takes precedence over an expiring one.
+        covering_windows: List[Tuple[date, date]] = []
         for s in schedules:
             start_d, end_d = self._get_dates(s)
             if start_d and end_d and start_d <= today <= end_d:
-                active_window_start = start_d
-                active_window_end = end_d
-                break
+                covering_windows.append((start_d, end_d))
+
+        if covering_windows:
+            covering_windows.sort(key=lambda w: w[0])
+            active_window_start, active_window_end = covering_windows[-1]
 
         # If no schedule strictly covers today, pick the earliest upcoming
         if not active_window_start:

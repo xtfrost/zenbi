@@ -156,6 +156,36 @@ entities:
   - calendar.zenbi_planning
 ```
 
+> [!TIP]
+> **Daily Agendas & Visibility Engine (`agenda_today` & `agenda_tomorrow`)**:
+> The schedule calendar entity (`calendar.zenbi_{student}_schedule`) exposes structured attributes designed for automations, TTS announcements, and card visibility:
+> - `classes_today`: Number of classes scheduled today (`0` on weekends/holidays).
+> - `classes_tomorrow`: Number of classes scheduled tomorrow.
+> - `agenda_today`: Chronological list of today's classes (`title`, `time`, `start_time`, `end_time`, `location`, `substitutes`, `has_homework`, `homework`, `note`).
+> - `agenda_tomorrow`: Chronological list of tomorrow's classes.
+>
+> **Lovelace Visibility Rule Example (only show card when school is in session today)**:
+> ```yaml
+> visibility:
+>   - condition: template
+>     value_template: "{{ state_attr('calendar.zenbi_schedule', 'classes_today') > 0 }}"
+> ```
+>
+> **Markdown Today's Schedule Card**:
+> ```yaml
+> type: markdown
+> title: Dagens Skema
+> content: >-
+>   {% if state_attr('calendar.zenbi_schedule', 'classes_today') > 0 %}
+>   {% for c in state_attr('calendar.zenbi_schedule', 'agenda_today') %}
+>   - **{{ c.start_time }} - {{ c.end_time }}**: {{ c.title }}{% if c.location %} *({{ c.location }})*{% endif %}{% if c.has_homework %} 📚{% endif %}
+>   {% endfor %}
+>   {% else %}
+>   Ingen lektioner i dag 🎉
+>   {% endif %}
+> ```
+
+
 ### 3. Homework Checklist (To-do List Card)
 An interactive checklist of school assignments that syncs completion status persistently:
 

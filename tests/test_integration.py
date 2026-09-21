@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -1639,6 +1639,198 @@ def test_format_attachment_display_name():
     assert format_attachment_display_name({"name": "Dokument"}) == "Dokument"
     assert format_attachment_display_name(None) == "Vedhæftet fil"
     assert format_attachment_display_name("fil.pdf") == "fil.pdf"
+
+
+@pytest.mark.asyncio
+async def test_schedule_calendar_agenda_today_and_tomorrow(
+    mock_hass, mock_config_entry, mock_client
+):
+    """Test ZenbiScheduleCalendarEntity computes agenda_today and agenda_tomorrow."""
+    coordinator = ZenbiCalendarDataUpdateCoordinator(
+        mock_hass, mock_client, mock_config_entry
+    )
+
+    now = dt_util.now()
+    today = now.date()
+    tomorrow = today + timedelta(days=1)
+    yesterday = today - timedelta(days=1)
+    future_3d = today + timedelta(days=3)
+
+    # Class 1: Today 08:00 - 08:45 (with homework)
+    start_c1 = datetime.combine(today, time(8, 0)).astimezone()
+    end_c1 = datetime.combine(today, time(8, 45)).astimezone()
+    c1 = ZenbiCalendarItem(
+        id="c1",
+        title="Dansk",
+        start=start_c1.isoformat(),
+        end=end_c1.isoformat(),
+        resources=[{"name": "Lokale 402"}],
+        homework=[
+            ZenbiHomework(
+                id="hw-c1",
+                calendar_item_id="c1",
+                description="Læs side 10-15",
+                raw_description="",
+                date=start_c1.isoformat(),
+                files=[{"name": "opgave", "extension": "pdf"}],
+            )
+        ],
+        note="Husk bog",
+    )
+
+    # Class 2: Today 09:00 - 09:45 (with substitute)
+    start_c2 = datetime.combine(today, time(9, 0)).astimezone()
+    end_c2 = datetime.combine(today, time(9, 45)).astimezone()
+    c2 = ZenbiCalendarItem(
+        id="c2",
+        title="Matematik",
+        start=start_c2.isoformat(),
+        end=end_c2.isoformat(),
+        resources=[{"name": "Lokale 402"}],
+        substitutes=[{"name": "Vikar Hans"}],
+    )
+
+    # Class 3: Tomorrow 10:00 - 10:45
+    start_c3 = datetime.combine(tomorrow, time(10, 0)).astimezone()
+    end_c3 = datetime.combine(tomorrow, time(10, 45)).astimezone()
+    c3 = ZenbiCalendarItem(
+        id="c3",
+        title="Historie",
+        start=start_c3.isoformat(),
+        end=end_c3.isoformat(),
+        resources=[{"name": "Lokale 101"}],
+    )
+
+    # Class 4: 3 days in future (should NOT be in today or tomorrow)
+    start_c4 = datetime.combine(future_3d, time(8, 0)).astimezone()
+    end_c4 = datetime.combine(future_3d, time(8, 45)).astimezone()
+    c4 = ZenbiCalendarItem(
+        id="c4",
+        title="Engelsk",
+        start=start_c4.isoformat(),
+        end=end_c4.isoformat(),
+    )
+
+    # Class 5: Yesterday (should NOT be in today or tomorrow)
+    start_c5 = datetime.combine(yesterday, time(8, 0)).astimezone()
+    end_c5 = datetime.combine(yesterday, time(8, 45)).astimezone()
+    c5 = ZenbiCalendarItem(
+        id="c5",
+        title="Idræt",
+        start=start_c5.isoformat(),
+        end=end_c5.isoformat(),
+    )
+
+    coordinator.data = ZenbiCalendarData(
+        calendar_items=[c4, c2, c1, c3, c5],  # intentionally unordered
+        window_start=start_c5,
+        window_end=end_c4,
+    )
+
+    entity = ZenbiScheduleCalendarEntity(coordinator, mock_config_entry)
+    attrs = entity.extra_state_attributes
+
+    # Check counts
+    assert attrs["classes_today"] == 2
+    assert attrs["classes_tomorrow"] == 1
+    assert len(attrs["agenda_today"]) == 2
+    assert len(attrs["agenda_tomorrow"]) == 1
+
+    # Check chronological ordering and formatting of agenda_today
+    c1_out = attrs["agenda_today"][0]
+    assert c1_out["title"] == "Dansk"
+    assert c1_out["time"] == "08:00 - 08:45"
+    assert c1_out["start_time"] == "08:00"
+    assert c1_out["end_time"] == "08:45"
+    assert c1_out["location"] == "Lokale 402"
+    assert c1_out["note"] == "Husk bog"
+    assert c1_out["has_homework"] is True
+    assert len(c1_out["homework"]) == 1
+    assert c1_out["homework"][0]["description"] == "Læs side 10-15"
+    assert c1_out["homework"][0]["files"] == ["opgave.pdf"]
+
+    c2_out = attrs["agenda_today"][1]
+    assert c2_out["title"] == "Matematik"
+    assert c2_out["time"] == "09:00 - 09:45"
+    assert c2_out["substitutes"] == ["Vikar Hans"]
+    assert c2_out["has_homework"] is False
+
+    # Check agenda_tomorrow
+    c3_out = attrs["agenda_tomorrow"][0]
+    assert c3_out["title"] == "Historie"
+    assert c3_out["time"] == "10:00 - 10:45"
+    assert c3_out["location"] == "Lokale 101"
+
+    # Test empty schedule returns safe defaults
+    coordinator.data = ZenbiCalendarData(calendar_items=[])
+    empty_attrs = entity.extra_state_attributes
+    assert empty_attrs["agenda_today"] == []
+    assert empty_attrs["agenda_tomorrow"] == []
+    assert empty_attrs["classes_today"] == 0
+    assert empty_attrs["classes_tomorrow"] == 0
+
+
+@pytest.mark.asyncio
+async def test_weekly_plan_sensor_automatic_monday_transition(
+    mock_hass, mock_config_entry, mock_client
+):
+    """Test ZenbiWeeklyPlanSensor automatically transitions to the new week on Monday."""
+    coordinator = ZenbiCalendarDataUpdateCoordinator(
+        mock_hass, mock_client, mock_config_entry
+    )
+
+    sched_w38 = ZenbiWeeklySchedule(
+        id="ws-38",
+        title="Uge 38 Plan",
+        start="2026-09-14T00:00:00+02:00",
+        end="2026-09-21T00:00:00+02:00",
+        description="Besked for uge 38.",
+        raw_description="",
+    )
+    sched_w39 = ZenbiWeeklySchedule(
+        id="ws-39",
+        title="Uge 39 Plan",
+        start="2026-09-21T00:00:00+02:00",
+        end="2026-09-28T00:00:00+02:00",
+        description="Besked for uge 39.",
+        raw_description="",
+    )
+    sched_w40 = ZenbiWeeklySchedule(
+        id="ws-40",
+        title="Uge 40 Plan",
+        start="2026-09-28T00:00:00+02:00",
+        end="2026-10-05T00:00:00+02:00",
+        description="Besked for uge 40.",
+        raw_description="",
+    )
+
+    coordinator.data = ZenbiCalendarData(
+        students=["Albert Hansen"],
+        weekly_schedules=[sched_w38, sched_w39, sched_w40],
+    )
+    sensor = ZenbiWeeklyPlanSensor(
+        coordinator, mock_config_entry, student_name="Albert Hansen"
+    )
+
+    # 1. On Sunday 2026-09-20 (end of week 38): current is W38, next is W39
+    sunday_dt = datetime(2026, 9, 20, 18, 0, 0, tzinfo=timezone.utc)
+    with patch("custom_components.zenbi.sensor.dt_util.now", return_value=sunday_dt):
+        assert sensor.native_value == "Uge 38 Plan"
+        attrs_sun = sensor.extra_state_attributes
+        assert "Besked for uge 38." in attrs_sun["current_week_plan"]
+        assert attrs_sun["title"] == "Uge 38 Plan"
+        assert "Besked for uge 39." in attrs_sun["next_week_plan"]
+        assert attrs_sun["next_week_title"] == "Uge 39 Plan"
+
+    # 2. On Monday 2026-09-21 at 00:00:01 / 16:13 (start of week 39): current MUST be W39, next is W40!
+    monday_dt = datetime(2026, 9, 21, 16, 13, 0, tzinfo=timezone.utc)
+    with patch("custom_components.zenbi.sensor.dt_util.now", return_value=monday_dt):
+        assert sensor.native_value == "Uge 39 Plan"
+        attrs_mon = sensor.extra_state_attributes
+        assert "Besked for uge 39." in attrs_mon["current_week_plan"]
+        assert attrs_mon["title"] == "Uge 39 Plan"
+        assert "Besked for uge 40." in attrs_mon["next_week_plan"]
+        assert attrs_mon["next_week_title"] == "Uge 40 Plan"
 
 
 

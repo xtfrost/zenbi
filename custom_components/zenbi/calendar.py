@@ -302,10 +302,100 @@ class ZenbiScheduleCalendarEntity(ZenbiBaseCalendarEntity):
         Only scalar values and flattened name lists are written to the recorder
         to prevent unbounded raw API dicts accumulating in the database.
         """
-        attrs: Dict[str, Any] = {}
+        attrs: Dict[str, Any] = {
+            "agenda_today": [],
+            "agenda_tomorrow": [],
+            "classes_today": 0,
+            "classes_tomorrow": 0,
+        }
         items = self._get_items()
         if not items:
             return attrs
+
+        today = dt_util.now().date()
+        tomorrow = today + timedelta(days=1)
+        agenda_today: List[Dict[str, Any]] = []
+        agenda_tomorrow: List[Dict[str, Any]] = []
+
+        for item in items:
+            start_dt = dt_util.parse_datetime(item.start)
+            end_dt = dt_util.parse_datetime(item.end)
+            if not start_dt or not end_dt:
+                continue
+
+            if start_dt.tzinfo is None:
+                start_dt = start_dt.replace(tzinfo=timezone.utc)
+            if end_dt.tzinfo is None:
+                end_dt = end_dt.replace(tzinfo=timezone.utc)
+
+            start_local = dt_util.as_local(start_dt) if hasattr(dt_util, "as_local") else start_dt
+            end_local = dt_util.as_local(end_dt) if hasattr(dt_util, "as_local") else end_dt
+            item_date = start_local.date()
+
+            if item_date == today or item_date == tomorrow:
+                start_time_str = start_local.strftime("%H:%M")
+                end_time_str = end_local.strftime("%H:%M")
+                class_entry: Dict[str, Any] = {
+                    "title": item.title,
+                    "time": f"{start_time_str} - {end_time_str}",
+                    "start_time": start_time_str,
+                    "end_time": end_time_str,
+                    "start": start_local.isoformat(),
+                    "end": end_local.isoformat(),
+                }
+                if item.resources:
+                    res_names = [
+                        r.get("name") or r.get("title")
+                        for r in item.resources
+                        if isinstance(r, dict) and (r.get("name") or r.get("title"))
+                    ]
+                    if res_names:
+                        class_entry["location"] = ", ".join(res_names)
+
+                if item.substitutes:
+                    sub_names = [
+                        s.get("name") or s.get("title")
+                        for s in item.substitutes
+                        if isinstance(s, dict) and (s.get("name") or s.get("title"))
+                    ]
+                    if sub_names:
+                        class_entry["substitutes"] = sub_names
+
+                if item.note:
+                    class_entry["note"] = item.note
+
+                if item.description:
+                    class_entry["description"] = strip_markdown(item.description)
+
+                has_hw = bool(item.homework)
+                class_entry["has_homework"] = has_hw
+                if has_hw:
+                    class_entry["homework"] = [
+                        {
+                            "id": hw.id,
+                            "description": strip_markdown(hw.description) if hw.description else None,
+                            "date": _format_date_clean(hw.date) if getattr(hw, "date", None) else None,
+                            "files": [
+                                format_attachment_display_name(f)
+                                for f in hw.files
+                                if isinstance(f, dict)
+                            ] if hw.files else [],
+                        }
+                        for hw in item.homework
+                    ]
+
+                if item_date == today:
+                    agenda_today.append(class_entry)
+                else:
+                    agenda_tomorrow.append(class_entry)
+
+        agenda_today.sort(key=lambda x: x["start"])
+        agenda_tomorrow.sort(key=lambda x: x["start"])
+
+        attrs["agenda_today"] = agenda_today
+        attrs["agenda_tomorrow"] = agenda_tomorrow
+        attrs["classes_today"] = len(agenda_today)
+        attrs["classes_tomorrow"] = len(agenda_tomorrow)
 
         current_event = self.event
         if current_event and current_event.uid:

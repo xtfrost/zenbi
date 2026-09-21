@@ -416,6 +416,12 @@ class MockDtUtil:
             return None
 
     @staticmethod
+    def as_local(dttm: datetime) -> datetime:
+        if dttm.tzinfo is None:
+            return dttm.replace(tzinfo=timezone.utc)
+        return dttm.astimezone()
+
+    @staticmethod
     def start_of_local_day(d: date) -> datetime:
         return datetime.combine(d, time.min, tzinfo=timezone.utc)
 

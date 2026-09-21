@@ -402,3 +402,44 @@ flowchart TD
   - Updated calendar event tests in `tests/test_integration.py` to verify clean plain-text descriptions without HTML or markdown asterisks.
   - Updated and added HTTP view tests verifying `Content-Disposition: inline` and body forwarding (64/64 passing).
 
+---
+
+### Phase 14: Agenda Today & Agenda Tomorrow Attributes for Automation & Visibility (Completed)
+- [x] **Schedule Calendar Entity Attributes (`calendar.py`)**:
+  - In `ZenbiScheduleCalendarEntity.extra_state_attributes`, compute and expose:
+    - `agenda_today`: Chronologically sorted list of all classes/lessons scheduled for today (`today = dt_util.now().date()`).
+    - `agenda_tomorrow`: Chronologically sorted list of all classes/lessons scheduled for tomorrow (`tomorrow = today + timedelta(days=1)`).
+    - `classes_today`: Integer count of classes scheduled today.
+    - `classes_tomorrow`: Integer count of classes scheduled tomorrow.
+  - Structure each item cleanly for automation/template access:
+    - `title`: Subject name (e.g. `"Dansk"`).
+    - `start`: ISO datetime string.
+    - `end`: ISO datetime string.
+    - `start_time`: Formatted local time string (e.g. `"08:00"`).
+    - `end_time`: Formatted local time string (e.g. `"08:45"`).
+    - `time`: Formatted range (e.g. `"08:00 - 08:45"`).
+    - `location`: Room/location string or `None`.
+    - `substitutes`: List of substitute teacher names or empty list.
+    - `has_homework`: Boolean flag.
+    - `homework`: List of homework summaries (due date, description, files) if present.
+    - `note`: Teacher note if present.
+- [x] **Documentation (`README.md`)**:
+  - Document `agenda_today` and `agenda_tomorrow` attributes.
+  - Provide ready-to-use template examples for Automations and Lovelace Card Visibility.
+- [x] **Automated Testing**:
+  - Added tests in `tests/test_integration.py` verifying `agenda_today` and `agenda_tomorrow` filtering, time parsing, homework correlation, and safe default fallback (65/65 passing).
+
+---
+
+### Phase 15: Automatic Monday Week Transition & Midnight Boundary Bugfix (Completed)
+- [x] **Midnight Boundary Handling (`sensor.py`)**:
+  - In `ZenbiWeeklyPlanSensor._get_dates`:
+    - Check if `end_dt` (or parsed ISO string) has time `00:00:00`.
+    - If `00:00:00`, treat the date as an exclusive boundary representing midnight at the start of the day. The effective inclusive last date is `(end_dt - 1 second).date()` (i.e. Sunday, not Monday).
+- [x] **Transition Day Resolution (`sensor.py`)**:
+  - In `ZenbiWeeklyPlanSensor._get_active_and_next_groups`:
+    - When multiple weekly schedules overlap or cover `today`, collect all matching windows and pick the one with the latest `start_d <= today` (the newly starting week rather than the expiring previous week).
+- [x] **Automated Testing**:
+  - Added integration tests in `tests/test_integration.py` simulating Sunday and Monday transitions across midnight (66/66 passing).
+
+
