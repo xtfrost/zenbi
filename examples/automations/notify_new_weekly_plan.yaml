@@ -1,0 +1,41 @@
+# Automation Example: Notify when next week's plan or a new weekly plan message is posted
+#
+# This automation triggers whenever the weekly plan sensor attributes change (e.g. when the teacher
+# posts the plan for next week, typically on Friday or Sunday, or updates the current week).
+# Replace 'sensor.zenbi_oliver_weekly_plan' with your student's sensor entity ID.
+
+alias: "Zenbi: Notify when New Weekly Plan is Posted"
+description: "Send a notification when the teacher posts or updates next week's or current week's plan."
+trigger:
+  - platform: state
+    entity_id: sensor.zenbi_oliver_weekly_plan
+    attribute: next_week_plan
+  - platform: state
+    entity_id: sensor.zenbi_oliver_weekly_plan
+    attribute: current_week_plan
+condition:
+  # Only trigger if the new content is non-empty and different from previous
+  - condition: template
+    value_template: >-
+      {{ trigger.to_state is not none and
+         trigger.from_state is not none and
+         trigger.to_state.state != '' and
+         trigger.to_state.attributes[trigger.attribute] != trigger.from_state.attributes[trigger.attribute] and
+         trigger.to_state.attributes[trigger.attribute] | string | length > 10 }}
+action:
+  - action: notify.notify
+    data:
+      title: >-
+        {% if trigger.attribute == 'next_week_plan' %}
+          Zenbi: Ny ugeplan for næste uge er lagt op!
+        {% else %}
+          Zenbi: Ugeplanen for denne uge er opdateret
+        {% endif %}
+      message: >-
+        {% set plan_text = state_attr('sensor.zenbi_oliver_weekly_plan', trigger.attribute) %}
+        {{ plan_text | truncate(350, True, '...') }}
+      data:
+        tag: "zenbi-weekly-plan"
+        url: "/lovelace/skole"
+mode: single
+

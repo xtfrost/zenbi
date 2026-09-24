@@ -1,0 +1,80 @@
+# Dashboard Example: School Overview Dashboard Cards
+#
+# Copy and paste these cards into your Home Assistant Lovelace dashboard.
+# Adjust entity IDs (e.g., 'oliver') to match your child's entity names.
+
+type: vertical-stack
+cards:
+  # ---------------------------------------------------------------------------
+  # Card 1: Today's & Tomorrow's Class Schedule (Hidden when no classes)
+  # ---------------------------------------------------------------------------
+  - type: conditional
+    conditions:
+      - entity: calendar.zenbi_oliver_schedule
+        state_not: "unavailable"
+    card:
+      type: markdown
+      title: "🎒 Olivers Skoleskema"
+      content: >-
+        {% set classes_today = state_attr('calendar.zenbi_oliver_schedule', 'classes_today') | int(0) %}
+        {% set agenda_today = state_attr('calendar.zenbi_oliver_schedule', 'agenda_today') %}
+        {% set classes_tomorrow = state_attr('calendar.zenbi_oliver_schedule', 'classes_tomorrow') | int(0) %}
+        {% set agenda_tomorrow = state_attr('calendar.zenbi_oliver_schedule', 'agenda_tomorrow') %}
+
+        ### 📅 I dag ({{ classes_today }} lektioner)
+        {% if classes_today > 0 and agenda_today %}
+        | Tid | Fag | Lokale | Note |
+        | :--- | :--- | :--- | :--- |
+        {% for c in agenda_today -%}
+        | **{{ c.time }}** | {{ c.title }} | {{ c.location or '-' }} | {% if c.has_homework %}📝 **Lektier!**{% elif c.substitutes %}⚠️ Vikar{% else %}-{% endif %} |
+        {% endfor %}
+        {% else %}
+        *Ingen lektioner i dag (weekend eller ferie).*
+        {% endif %}
+
+        ---
+
+        ### 📆 I morgen ({{ classes_tomorrow }} lektioner)
+        {% if classes_tomorrow > 0 and agenda_tomorrow %}
+        | Tid | Fag | Lokale | Note |
+        | :--- | :--- | :--- | :--- |
+        {% for c in agenda_tomorrow -%}
+        | **{{ c.time }}** | {{ c.title }} | {{ c.location or '-' }} | {% if c.has_homework %}📝 **Lektier!**{% elif c.substitutes %}⚠️ Vikar{% else %}-{% endif %} |
+        {% endfor %}
+        {% else %}
+        *Ingen lektioner i morgen.*
+        {% endif %}
+
+  # ---------------------------------------------------------------------------
+  # Card 2: Ugeplan (Current & Next Week + Attachments)
+  # ---------------------------------------------------------------------------
+  - type: markdown
+    title: "📋 Ugeplan"
+    content: >-
+      {% set cur = state_attr('sensor.zenbi_oliver_weekly_plan', 'current_week_plan') %}
+      {% set nxt = state_attr('sensor.zenbi_oliver_weekly_plan', 'next_week_plan') %}
+      {% set files = state_attr('sensor.zenbi_oliver_weekly_plan', 'files') %}
+
+      ### 📌 Denne uge ({{ states('sensor.zenbi_oliver_weekly_plan') }})
+      {{ cur if cur else '_Ingen ugeplan fundet for denne uge._' }}
+
+      {% if files and files | length > 0 %}
+      #### 📎 Vedhæftede filer
+      {% for f in files %}
+      - [{{ f.name }}]({{ f.url }}) ({{ f.size }})
+      {% endfor %}
+      {% endif %}
+
+      {% if nxt %}
+      ---
+      ### 🔮 Næste uges plan
+      {{ nxt }}
+      {% endif %}
+
+  # ---------------------------------------------------------------------------
+  # Card 3: Lektieliste (Native Todo List Card with completion checkboxes)
+  # ---------------------------------------------------------------------------
+  - type: todo-list
+    entity: todo.zenbi_oliver_homework
+    title: "📝 Lektier"
+

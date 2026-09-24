@@ -1,0 +1,45 @@
+# Automation Example: Notify when new homework is added
+#
+# This automation triggers whenever the homework todo list count changes or updates.
+# Replace '<student>' with your student's slugified name (e.g., 'oliver')
+# and 'notify.mobile_app_your_phone' with your device's notification service.
+
+alias: "Zenbi: Notify on New or Updated Homework"
+description: "Send a push notification to mobile phone when homework is added or updated in Zenbi."
+trigger:
+  - platform: state
+    entity_id: todo.zenbi_oliver_homework
+condition:
+  # Only notify if the count of homework increased or changed to a non-zero number
+  - condition: template
+    value_template: >-
+      {{ trigger.to_state is not none and
+         trigger.from_state is not none and
+         trigger.to_state.state | int(0) > trigger.from_state.state | int(0) }}
+action:
+  # Call todo.get_items to fetch the current list of active homework items
+  - action: todo.get_items
+    target:
+      entity_id: todo.zenbi_oliver_homework
+    data:
+      status:
+        - needs_action
+    response_variable: homework_response
+  - action: notify.notify
+    data:
+      title: "Zenbi: Nyt lektieindhold for Oliver"
+      message: >-
+        {% set items = homework_response['todo.zenbi_oliver_homework']['items'] %}
+        {% if items | length > 0 %}
+          Oliver har {{ items | length }} uafsluttede lektier:
+          {% for item in items %}
+            • {{ item.summary }}{% if item.due is defined and item.due %} (Frist: {{ item.due }}){% endif %}
+          {% endfor %}
+        {% else %}
+          Ingen lektier lige nu.
+        {% endif %}
+      data:
+        tag: "zenbi-homework"
+        url: "/todo"
+mode: single
+

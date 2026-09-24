@@ -82,12 +82,16 @@ This integration brings school schedules, homework tasks, weekly letters ("ugebr
    - **Device ID (Optional)**: If you want Zenbi to treat Home Assistant as your already-trusted desktop browser, copy your `uniqueDeviceId` from your browser's DevTools (`F12` > Application > Local Storage > `https://app.zenbi.dk`). Leaving this blank will automatically generate a stable, deterministic device ID.
 4. Click **Submit**.
 
-### Integration Options
+### Integration Options & Polling Frequency
 To adjust update intervals:
 1. Go to **Settings** > **Devices & Services** > **Zenbi**.
 2. Click **Configure**.
 3. Customize:
-   - **Calendar Sync Interval (hours)**: Default is `6` hours (rolling 14-day window in `Europe/Copenhagen` timezone).
+   - **Calendar Sync Interval (hours)**: Default is `6` hours (supports `1` to `168` hours).
+
+> [!NOTE]
+> **Is Hourly Polling Safe?**
+> Yes! Setting the interval to `1` hour is completely safe and within Zenbi API limits. Each poll executes only 4 lightweight GET requests concurrently, and the integration retains and reuses the active JWT authentication token across polls (only refreshing when it nears its 24h+ expiration). Hourly polling amounts to 96 requests over a 24-hour period—far below any rate-limiting or security thresholds and indistinguishable from standard browser usage.
 
 ---
 
@@ -242,6 +246,17 @@ Zenbi attachment files (e.g. SFO calendars, classroom handouts, homework files) 
 - **Inline Images**: Image attachments (`.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`) attached to teacher letters are automatically embedded as responsive inline images directly inside the Weekly Plan Markdown sensor, with clickable links to view them full-resolution in a new tab.
 - **Document Downloads**: Non-image documents (`.pdf`, `.docx`, etc.) appear under `### Vedhæftede filer` formatted with `target="_blank"` and `download` attributes so clicking them initiates native downloads without navigating away from your dashboard.
 - **SAS Caching**: Generated download URLs are cached in-memory for 50 minutes, ensuring fast image loads on dashboards with minimal API calls.
+
+---
+
+## Automation & Dashboard Examples
+
+Ready-to-use YAML examples are provided in the [`examples/`](examples/) directory:
+
+- [**Notify on New Homework**](examples/automations/notify_new_homework.yaml): Push notification alerting parents when new homework is assigned or updated with summaries and due dates.
+- [**Notify on New Weekly Plan**](examples/automations/notify_new_weekly_plan.yaml): Alert when next week's plan or a new weekly plan message is posted by teachers.
+- [**Morning School Briefing**](examples/automations/morning_schedule_briefing.yaml): Automated morning push notification or TTS announcement detailing today's lessons, room assignments, and homework due (automatically skips weekends and holidays).
+- [**School Overview Dashboard Cards**](examples/dashboards/school_dashboard_card.yaml): Production-ready Lovelace cards including a daily timetable with homework badges, weekly plan markdown with attachments, and native todo checklist.
 
 ---
 

@@ -1,0 +1,35 @@
+# Automation Example: Morning school schedule & lesson briefing
+#
+# Runs at 07:15 every morning. Checks if there are classes scheduled today (classes_today > 0).
+# If there are classes, it sends a phone notification (or speaks over TTS) summarizing the day's
+# subjects, times, locations, and any homework due today.
+# Skips weekends, holidays, and school breaks automatically.
+
+alias: "Zenbi: Morning School Schedule Briefing"
+description: "Briefing for today's classes, room numbers, and homework flags."
+trigger:
+  - platform: time
+    at: "07:15:00"
+condition:
+  # Only run if there are lessons scheduled today
+  - condition: template
+    value_template: >-
+      {{ state_attr('calendar.zenbi_oliver_schedule', 'classes_today') | int(0) > 0 }}
+action:
+  - action: notify.notify
+    data:
+      title: "Godmorgen Oliver 🎒 Her er dagens skema:"
+      message: >-
+        {% set agenda = state_attr('calendar.zenbi_oliver_schedule', 'agenda_today') %}
+        {% if agenda %}
+          {% for item in agenda %}
+            • {{ item.time }} - {{ item.title }}{% if item.location %} ({{ item.location }}){% endif %}{% if item.has_homework %} ⚠️ Lektier!{% endif %}{% if item.substitutes %} [Vikardækning: {{ item.substitutes | join(', ') }}]{% endif %}
+          {% endfor %}
+        {% else %}
+          Ingen lektioner i dag!
+        {% endif %}
+      data:
+        tag: "zenbi-morning-briefing"
+        url: "/lovelace/skole"
+mode: single
+

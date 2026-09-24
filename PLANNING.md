@@ -442,4 +442,19 @@ flowchart TD
 - [x] **Automated Testing**:
   - Added integration tests in `tests/test_integration.py` simulating Sunday and Monday transitions across midnight (66/66 passing).
 
+---
+
+### Phase 16: Hourly Polling Verification & Automation/Dashboard Examples (Completed)
+- [x] **Technical Safety Verification**:
+  - Confirmed rate limit safety of 1-hour polling: 4 GET queries/hour = 96 queries/day, persistent JWT reuse (24h+ validity), Chrome browser User-Agent header, connection reuse via aiohttp. Zero risk of account ban or IP rate limiting.
+  - Documented the UI procedure in `README.md` to configure the 1-hour interval under Settings > Devices & Services > Zenbi > Configure.
+- [x] **Examples Directory (`examples/`)**:
+  - `examples/automations/notify_new_homework.yaml`: Alert parents when new homework is added or updated.
+  - `examples/automations/notify_new_weekly_plan.yaml`: Alert parents when a new weekly schedule/plan is posted.
+  - `examples/automations/morning_schedule_briefing.yaml`: Daily morning briefing with classes, homework status, and teacher notes using `agenda_today`.
+  - `examples/dashboards/school_dashboard_card.yaml`: Lovelace card configurations for schedule, weekly plan with attachments, and homework todos.
+- [x] **Documentation Updates (`README.md`)**:
+  - Linked to `examples/` directory and included guidance on 1-hour polling.
+
+
 
