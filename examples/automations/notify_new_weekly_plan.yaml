@@ -1,41 +1,47 @@
 # Automation Example: Notify when next week's plan or a new weekly plan message is posted
 #
-# This automation triggers whenever the weekly plan sensor attributes change (e.g. when the teacher
-# posts the plan for next week, typically on Friday or Sunday, or updates the current week).
-# Replace 'sensor.zenbi_oliver_weekly_plan' with your student's sensor entity ID.
+# Triggers immediately when:
+# 1. Next week's plan is posted (sensor.zenbi_next_weekly_plan changes from 0 to > 0).
+# 2. Or this week's plan receives a new message/update.
+# If you have multiple children, replace with 'sensor.zenbi_<student>_next_weekly_plan'.
 
 alias: "Zenbi: Notify when New Weekly Plan is Posted"
-description: "Send a notification when the teacher posts or updates next week's or current week's plan."
+description: "Send a notification when the teacher posts next week's plan or updates this week's plan."
 trigger:
+  # Trigger 1: Teacher publishes next week's plan (state goes from 0 to 1+)
+  - platform: numeric_state
+    entity_id: sensor.zenbi_next_weekly_plan
+    above: 0
+    id: next_week_published
+  # Trigger 2: A new message or update is posted for the current week
   - platform: state
-    entity_id: sensor.zenbi_oliver_weekly_plan
-    attribute: next_week_plan
-  - platform: state
-    entity_id: sensor.zenbi_oliver_weekly_plan
-    attribute: current_week_plan
+    entity_id: sensor.zenbi_weekly_plan
+    id: current_week_updated
 condition:
-  # Only trigger if the new content is non-empty and different from previous
+  # Avoid firing if current week goes to 0 or unavailable
   - condition: template
     value_template: >-
-      {{ trigger.to_state is not none and
-         trigger.from_state is not none and
-         trigger.to_state.state != '' and
-         trigger.to_state.attributes[trigger.attribute] != trigger.from_state.attributes[trigger.attribute] and
-         trigger.to_state.attributes[trigger.attribute] | string | length > 10 }}
+      {{ trigger.id == 'next_week_published' or
+         (trigger.id == 'current_week_updated' and
+          trigger.to_state is not none and
+          trigger.from_state is not none and
+          trigger.to_state.state | int(0) > trigger.from_state.state | int(0)) }}
 action:
   - action: notify.notify
     data:
       title: >-
-        {% if trigger.attribute == 'next_week_plan' %}
-          Zenbi: Ny ugeplan for næste uge er lagt op!
+        {% if trigger.id == 'next_week_published' %}
+          Zenbi: Ny ugeplan for næste uge ({{ state_attr('sensor.zenbi_next_weekly_plan', 'title') or 'Næste uge' }})
         {% else %}
-          Zenbi: Ugeplanen for denne uge er opdateret
+          Zenbi: Ny besked i denne uges ugeplan ({{ state_attr('sensor.zenbi_weekly_plan', 'title') or 'Denne uge' }})
         {% endif %}
       message: >-
-        {% set plan_text = state_attr('sensor.zenbi_oliver_weekly_plan', trigger.attribute) %}
-        {{ plan_text | truncate(350, True, '...') }}
+        {% if trigger.id == 'next_week_published' %}
+          {{ (state_attr('sensor.zenbi_next_weekly_plan', 'content') or '') | truncate(350, True, '...') }}
+        {% else %}
+          {{ (state_attr('sensor.zenbi_weekly_plan', 'content') or '') | truncate(350, True, '...') }}
+        {% endif %}
       data:
         tag: "zenbi-weekly-plan"
         url: "/lovelace/skole"
 mode: single
-

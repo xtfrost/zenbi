@@ -456,5 +456,30 @@ flowchart TD
 - [x] **Documentation Updates (`README.md`)**:
   - Linked to `examples/` directory and included guidance on 1-hour polling.
 
+---
+
+### Phase 17: Split Weekly Plan into Current and Next Week Sensors with Numeric States (Completed)
+- [x] **Sensor Architecture (`sensor.py`)**:
+  - Refactored `ZenbiWeeklyPlanBaseSensor` with shared date parsing, attachment partitioning, and link formatting.
+  - Updated `ZenbiWeeklyPlanSensor`:
+    - `native_value`: returns integer count of active week plans/messages (`0`, `1`, `2`, ...).
+    - `extra_state_attributes`: `content` (Markdown text), `title`, `start_date`, `end_date`, `files`.
+  - Added `ZenbiNextWeeklyPlanSensor`:
+    - `_attr_translation_key = "next_weekly_plan"`
+    - `_attr_unique_id = f"{entry.entry_id}_{slug}_next_weekly_plan"`
+    - `native_value`: returns integer count of next week plans/messages (`0` if none, `1`, `2`, ...).
+    - `extra_state_attributes`: `content` (Markdown text), `title`, `start_date`, `end_date`, `files`.
+  - Registered both sensors per student in `async_setup_entry`.
+- [x] **Translations (`strings.json`, `translations/da.json`, `translations/en.json`)**:
+  - Added `next_weekly_plan` translation keys across all locales.
+- [x] **Examples & Documentation (`README.md`, `examples/`)**:
+  - Updated `examples/automations/notify_new_weekly_plan.yaml` with `numeric_state` trigger above 0.
+  - Updated `examples/dashboards/school_dashboard_card.yaml` with conditional card based on `numeric_state > 0`.
+  - Updated `README.md` entities table and dashboard card snippets.
+- [x] **Automated Testing (`tests/test_integration.py`)**:
+  - Added test for `ZenbiNextWeeklyPlanSensor` empty vs populated behavior.
+  - Updated all integration tests to verify numeric message count state and `content` attribute (67/67 passing).
+
+
 
 

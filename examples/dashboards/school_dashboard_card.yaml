@@ -1,7 +1,8 @@
 # Dashboard Example: School Overview Dashboard Cards
 #
 # Copy and paste these cards into your Home Assistant Lovelace dashboard.
-# Adjust entity IDs (e.g., 'oliver') to match your child's entity names.
+# If you have multiple children, replace entities with your child's entity IDs
+# (e.g. 'calendar.zenbi_<student>_schedule', 'todo.zenbi_<student>_homework', etc.).
 
 type: vertical-stack
 cards:
@@ -10,16 +11,16 @@ cards:
   # ---------------------------------------------------------------------------
   - type: conditional
     conditions:
-      - entity: calendar.zenbi_oliver_schedule
+      - entity: calendar.zenbi_schedule
         state_not: "unavailable"
     card:
       type: markdown
-      title: "🎒 Olivers Skoleskema"
+      title: "🎒 Skoleskema"
       content: >-
-        {% set classes_today = state_attr('calendar.zenbi_oliver_schedule', 'classes_today') | int(0) %}
-        {% set agenda_today = state_attr('calendar.zenbi_oliver_schedule', 'agenda_today') %}
-        {% set classes_tomorrow = state_attr('calendar.zenbi_oliver_schedule', 'classes_tomorrow') | int(0) %}
-        {% set agenda_tomorrow = state_attr('calendar.zenbi_oliver_schedule', 'agenda_tomorrow') %}
+        {% set classes_today = state_attr('calendar.zenbi_schedule', 'classes_today') | int(0) %}
+        {% set agenda_today = state_attr('calendar.zenbi_schedule', 'agenda_today') %}
+        {% set classes_tomorrow = state_attr('calendar.zenbi_schedule', 'classes_tomorrow') | int(0) %}
+        {% set agenda_tomorrow = state_attr('calendar.zenbi_schedule', 'agenda_tomorrow') %}
 
         ### 📅 I dag ({{ classes_today }} lektioner)
         {% if classes_today > 0 and agenda_today %}
@@ -46,35 +47,32 @@ cards:
         {% endif %}
 
   # ---------------------------------------------------------------------------
-  # Card 2: Ugeplan (Current & Next Week + Attachments)
+  # Card 2: Ugeplan for denne uge (sensor.zenbi_weekly_plan)
   # ---------------------------------------------------------------------------
   - type: markdown
-    title: "📋 Ugeplan"
+    title: >-
+      📋 Ugeplan ({{ state_attr('sensor.zenbi_weekly_plan', 'title') or 'Denne uge' }})
     content: >-
-      {% set cur = state_attr('sensor.zenbi_oliver_weekly_plan', 'current_week_plan') %}
-      {% set nxt = state_attr('sensor.zenbi_oliver_weekly_plan', 'next_week_plan') %}
-      {% set files = state_attr('sensor.zenbi_oliver_weekly_plan', 'files') %}
-
-      ### 📌 Denne uge ({{ states('sensor.zenbi_oliver_weekly_plan') }})
-      {{ cur if cur else '_Ingen ugeplan fundet for denne uge._' }}
-
-      {% if files and files | length > 0 %}
-      #### 📎 Vedhæftede filer
-      {% for f in files %}
-      - [{{ f.name }}]({{ f.url }}) ({{ f.size }})
-      {% endfor %}
-      {% endif %}
-
-      {% if nxt %}
-      ---
-      ### 🔮 Næste uges plan
-      {{ nxt }}
-      {% endif %}
+      {% set plan = state_attr('sensor.zenbi_weekly_plan', 'content') %}
+      {{ plan if plan else '_Ingen ugeplan fundet for denne uge._' }}
 
   # ---------------------------------------------------------------------------
-  # Card 3: Lektieliste (Native Todo List Card with completion checkboxes)
+  # Card 3: Næste uges ugeplan (Vises kun automatisk når læreren har lagt den op!)
+  # ---------------------------------------------------------------------------
+  - type: conditional
+    conditions:
+      - entity: sensor.zenbi_next_weekly_plan
+        state_not: "0"
+    card:
+      type: markdown
+      title: >-
+        🔮 Næste uge: {{ state_attr('sensor.zenbi_next_weekly_plan', 'title') or 'Ugeplan' }}
+      content: >-
+        {{ state_attr('sensor.zenbi_next_weekly_plan', 'content') }}
+
+  # ---------------------------------------------------------------------------
+  # Card 4: Lektieliste (Native Todo List Card with completion checkboxes)
   # ---------------------------------------------------------------------------
   - type: todo-list
-    entity: todo.zenbi_oliver_homework
+    entity: todo.zenbi_homework
     title: "📝 Lektier"
-

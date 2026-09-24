@@ -109,7 +109,8 @@ When an account is connected, Zenbi automatically discovers all enrolled childre
 | :--- | :--- | :--- | :--- |
 | `calendar.zenbi_{student}_schedule` | Skema / Schedule | Student | Timed school timetable, subjects, classroom resources, substitutes, and homework. |
 | `todo.zenbi_{student}_homework` | Lektier / Homework | Student | Dedicated checklist of homework tasks with due dates, previews, and completion toggles. |
-| `sensor.zenbi_{student}_weekly_plan` | Ugeplan / Weekly Plan | Student | Active weekly plan with formatted Markdown text attributes for Lovelace cards. |
+| `sensor.zenbi_{student}_weekly_plan` | Ugeplan / Weekly Plan | Student | Active weekly plan (state = message count) with formatted Markdown `content` and `files` attributes. |
+| `sensor.zenbi_{student}_next_weekly_plan` | Ugeplan næste uge / Next Weekly Plan | Student | Next week's plan (state = message count, `0` until published) with formatted Markdown `content` and `files` attributes. |
 | `calendar.zenbi_planning` | Årsplan / Planning | School | All-day school semester milestones, term dates, and holidays. |
 | `calendar.zenbi_weekly_messages` | Ugebreve / Weekly Messages | School | 7-day all-day events containing weekly teacher letters and attachment lists. |
 | `sensor.zenbi_last_synced` | Sidst synkroniseret / Last Synced | School | Diagnostic timestamp sensor tracking last successful sync, status, and error details. |
@@ -120,24 +121,33 @@ When an account is connected, Zenbi automatically discovers all enrolled childre
 
 Here are ready-to-use Lovelace dashboard configurations to get the most out of your Zenbi school data.
 
-### 1. Weekly Plan (Ugeplan) Markdown Card
-Renders the active week's plan with rich formatting, inline image previews (PNG, JPG, etc.), clickable file attachment download links (with file extensions like `.pdf`), and an optional preview of next week:
+### 1. Weekly Plan (Ugeplan) Markdown Cards
+Renders the active week's plan with rich formatting, inline image previews (PNG, JPG, etc.), and clickable file attachment links. Uses Home Assistant's native `conditional` card so next week's plan only appears once the teacher publishes it:
 
 ```yaml
-type: markdown
-title: Ugeplan
-content: >-
-  {{ state_attr('sensor.zenbi_weekly_plan', 'current_week_plan') }}
+# Denne uges plan
+- type: markdown
+  title: >-
+    📋 Ugeplan ({{ state_attr('sensor.zenbi_weekly_plan', 'title') or 'Denne uge' }})
+  content: >-
+    {% set plan = state_attr('sensor.zenbi_weekly_plan', 'content') %}
+    {{ plan if plan else '_Ingen ugeplan fundet for denne uge._' }}
 
-  {% if state_attr('sensor.zenbi_weekly_plan', 'next_week_plan') %}
-  ---
-  ### Næste uges plan ({{ state_attr('sensor.zenbi_weekly_plan', 'next_week_title') }})
-  {{ state_attr('sensor.zenbi_weekly_plan', 'next_week_plan') }}
-  {% endif %}
+# Næste uges plan (skjult indtil den udgives, da state er 0)
+- type: conditional
+  conditions:
+    - entity: sensor.zenbi_next_weekly_plan
+      state_not: "0"
+  card:
+    type: markdown
+    title: >-
+      🔮 Næste uge: {{ state_attr('sensor.zenbi_next_weekly_plan', 'title') or 'Ugeplan' }}
+    content: >-
+      {{ state_attr('sensor.zenbi_next_weekly_plan', 'content') }}
 ```
 
 > [!TIP]
-> **Attached Files Attribute**: The sensor also exposes a structured `files` attribute list for custom dashboard cards or automation scripts:
+> **Attached Files Attribute**: Both weekly plan sensors expose a structured `files` attribute list for custom dashboard cards or automation scripts:
 > ```yaml
 > # Example items in state_attr('sensor.zenbi_weekly_plan', 'files'):
 > # - name: "Fritter-kalender-26-27-uge-37.pdf"
@@ -234,11 +244,11 @@ cards:
   - type: markdown
     title: Ugeplan
     content: >-
-      {{ state_attr('sensor.zenbi_weekly_plan', 'current_week_plan') }}
+      {{ state_attr('sensor.zenbi_weekly_plan', 'content') }}
 ```
 
 > [!TIP]
-> If you have multiple children enrolled in Zenbi, their entities will automatically include their name slug (e.g. `calendar.zenbi_albert_schedule`, `todo.zenbi_albert_homework`, and `sensor.zenbi_albert_weekly_plan`). Simply substitute the entity ID corresponding to each child.
+> If you have multiple children enrolled in Zenbi, their entities will automatically include their name slug (e.g. `calendar.zenbi_albert_schedule`, `todo.zenbi_albert_homework`, `sensor.zenbi_albert_weekly_plan`, and `sensor.zenbi_albert_next_weekly_plan`). Simply substitute the entity ID corresponding to each child.
 
 ### On-Demand Attachment Downloads & Inline Images
 Zenbi attachment files (e.g. SFO calendars, classroom handouts, homework files) are served via an on-demand proxy endpoint (`/api/zenbi/file/{entry_id}/{file_id}`). When clicked from dashboard cards, Home Assistant automatically generates a fresh Azure Blob SAS token and redirects to the download, ensuring attachment links never expire.

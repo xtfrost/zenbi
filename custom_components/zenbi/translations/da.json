@@ -63,6 +63,9 @@
       "weekly_plan": {
         "name": "Ugeplan"
       },
+      "next_weekly_plan": {
+        "name": "Ugeplan næste uge"
+      },
       "last_synced": {
         "name": "Sidst synkroniseret"
       }

@@ -38,6 +38,7 @@ from custom_components.zenbi.todo import (
 )
 from custom_components.zenbi.sensor import (
     ZenbiLastSyncedSensor,
+    ZenbiNextWeeklyPlanSensor,
     ZenbiWeeklyPlanSensor,
     format_attachment_display_name,
     is_image_file,
@@ -1060,16 +1061,20 @@ async def test_multi_student_platform_setup(mock_hass, mock_config_entry, mock_c
     assert todo_albert.device_info.name == "Zenbi (Albert Hansen)"
     assert todo_ida.device_info.name == "Zenbi (Ida Hansen)"
 
-    # 3. Sensor setup
+    # 3. Sensor setup (weekly_plan and next_weekly_plan per student + last_synced)
     sensor_entities = []
     await async_setup_sensor_entry(mock_hass, mock_config_entry, lambda ents: sensor_entities.extend(ents))
-    assert len(sensor_entities) == 3
+    assert len(sensor_entities) == 5
     sensor_albert = next(e for e in sensor_entities if e.unique_id == "entry_123_albert_hansen_weekly_plan")
+    sensor_albert_next = next(e for e in sensor_entities if e.unique_id == "entry_123_albert_hansen_next_weekly_plan")
     sensor_ida = next(e for e in sensor_entities if e.unique_id == "entry_123_ida_hansen_weekly_plan")
+    sensor_ida_next = next(e for e in sensor_entities if e.unique_id == "entry_123_ida_hansen_next_weekly_plan")
     last_synced = next(e for e in sensor_entities if e.unique_id == "entry_123_last_synced")
 
     assert sensor_albert.device_info.name == "Zenbi (Albert Hansen)"
+    assert sensor_albert_next.device_info.name == "Zenbi (Albert Hansen)"
     assert sensor_ida.device_info.name == "Zenbi (Ida Hansen)"
+    assert sensor_ida_next.device_info.name == "Zenbi (Ida Hansen)"
     assert last_synced.device_info.name == "Zenbi (School)"
     assert (DOMAIN, "entry_123_school") in last_synced.device_info.identifiers
 
@@ -1185,19 +1190,27 @@ async def test_weekly_plan_sensor_attributes(mock_hass, mock_config_entry, mock_
     assert sensor.translation_key == "weekly_plan"
     assert sensor.device_info.name == "Zenbi (Albert Hansen)"
 
-    # State is current week title
-    assert sensor.native_value == "Uge 39 - Dansk tema"
+    # State is current week message count
+    assert sensor.native_value == 1
 
     attrs = sensor.extra_state_attributes
-    # Current week markdown
-    assert "current_week_plan" in attrs
-    assert "H.C. Andersen" in attrs["current_week_plan"]
+    # Current week markdown content
+    assert "content" in attrs
+    assert "H.C. Andersen" in attrs["content"]
+    assert attrs["title"] == "Uge 39 - Dansk tema"
     assert attrs["files"] == [{"name": "hc_andersen_tekst.pdf", "is_image": False}]
 
-    # Next week markdown
-    assert "next_week_plan" in attrs
-    assert "brøker" in attrs["next_week_plan"]
-    assert attrs["next_week_title"] == "Uge 40 - Matematikuge"
+    # Next week sensor
+    sensor_next = ZenbiNextWeeklyPlanSensor(coordinator, mock_config_entry, student_name="Albert Hansen")
+    assert sensor_next.unique_id == "entry_123_albert_hansen_next_weekly_plan"
+    assert sensor_next.translation_key == "next_weekly_plan"
+    assert sensor_next.device_info.name == "Zenbi (Albert Hansen)"
+    assert sensor_next.native_value == 1
+
+    attrs_next = sensor_next.extra_state_attributes
+    assert "content" in attrs_next
+    assert "brøker" in attrs_next["content"]
+    assert attrs_next["title"] == "Uge 40 - Matematikuge"
 
 
 @pytest.mark.asyncio
@@ -1236,30 +1249,30 @@ async def test_weekly_plan_sensor_smart_grouping_and_aggregation(mock_hass, mock
 
     sensor = ZenbiWeeklyPlanSensor(coordinator, mock_config_entry, student_name="Albert Hansen")
 
-    # Native value shows primary title + count of additional schedules
-    assert sensor.native_value == "Kære forældre i Pluto (+1 mere)"
+    # Native value shows message count of active schedules (2)
+    assert sensor.native_value == 2
 
     attrs = sensor.extra_state_attributes
-    # current_week_plan must NOT be empty or overridden by fritter
-    assert "Vi har haft en fantastisk emneuge." in attrs["current_week_plan"]
-    assert "### Vedhæftede filer" in attrs["current_week_plan"]
+    # content must NOT be empty or overridden by fritter
+    assert "Vi har haft en fantastisk emneuge." in attrs["content"]
+    assert "### Vedhæftede filer" in attrs["content"]
     # files must aggregate files from both messages without duplicates
     assert [f["name"] for f in attrs["files"]] == ["Hold (1)", "Fritter-kalender-26-27-uge-37.pdf"]
 
     # 2. Both schedules have text descriptions -> headers and separator
     sched_fritter.description = "Husk skiftetøj til fredag."
     attrs_multi = sensor.extra_state_attributes
-    assert "# Kære forældre i Pluto" in attrs_multi["current_week_plan"]
-    assert "# Fritter-kalender-26-27-uge-37" in attrs_multi["current_week_plan"]
-    assert "\n\n---\n\n" in attrs_multi["current_week_plan"]
+    assert "# Kære forældre i Pluto" in attrs_multi["content"]
+    assert "# Fritter-kalender-26-27-uge-37" in attrs_multi["content"]
+    assert "\n\n---\n\n" in attrs_multi["content"]
 
     # 3. Neither schedule has text descriptions -> fallback list of files
     sched_teacher.description = ""
     sched_fritter.description = ""
     attrs_fallback = sensor.extra_state_attributes
-    assert "*Vedhæftede filer til denne uge:*" in attrs_fallback["current_week_plan"]
-    assert "- Hold (1)" in attrs_fallback["current_week_plan"]
-    assert "- Fritter-kalender-26-27-uge-37.pdf" in attrs_fallback["current_week_plan"]
+    assert "*Vedhæftede filer til denne uge:*" in attrs_fallback["content"]
+    assert "- Hold (1)" in attrs_fallback["content"]
+    assert "- Fritter-kalender-26-27-uge-37.pdf" in attrs_fallback["content"]
 
 
 @pytest.mark.asyncio
@@ -1352,16 +1365,16 @@ async def test_weekly_plan_sensor_file_download_links(mock_hass, mock_config_ent
     expected_url_hold = f"/api/zenbi/file/{mock_config_entry.entry_id}/file-uuid-hold"
     expected_url_doc = f"/api/zenbi/file/{mock_config_entry.entry_id}/file-uuid-doc"
 
-    # Inline image rendering in current_week_plan for both extension in name and in extension field
-    assert f'<a href="{expected_url_img}" target="_blank" title="Skema.png">' in attrs["current_week_plan"]
-    assert f'<img src="{expected_url_img}" alt="Skema.png"' in attrs["current_week_plan"]
+    # Inline image rendering in content for both extension in name and in extension field
+    assert f'<a href="{expected_url_img}" target="_blank" title="Skema.png">' in attrs["content"]
+    assert f'<img src="{expected_url_img}" alt="Skema.png"' in attrs["content"]
 
-    assert f'<a href="{expected_url_hold}" target="_blank" title="Hold (1)">' in attrs["current_week_plan"]
-    assert f'<img src="{expected_url_hold}" alt="Hold (1)"' in attrs["current_week_plan"]
+    assert f'<a href="{expected_url_hold}" target="_blank" title="Hold (1)">' in attrs["content"]
+    assert f'<img src="{expected_url_hold}" alt="Hold (1)"' in attrs["content"]
 
     # Non-image document download link under Vedhæftede filer
-    assert "### Vedhæftede filer" in attrs["current_week_plan"]
-    assert f'<a href="{expected_url_doc}" target="_blank" download>Lektier.pdf</a>' in attrs["current_week_plan"]
+    assert "### Vedhæftede filer" in attrs["content"]
+    assert f'<a href="{expected_url_doc}" target="_blank" download>Lektier.pdf</a>' in attrs["content"]
 
     # Structured dicts in files attribute with is_image tag and extension metadata
     assert len(attrs["files"]) == 3
@@ -1403,9 +1416,9 @@ async def test_weekly_plan_sensor_file_download_links(mock_hass, mock_config_ent
     sensor_img_only = ZenbiWeeklyPlanSensor(coordinator, mock_config_entry, student_name="Albert Hansen")
     attrs_img_only = sensor_img_only.extra_state_attributes
     url_img_2 = f"/api/zenbi/file/{mock_config_entry.entry_id}/file-img-2"
-    assert f'<img src="{url_img_2}" alt="Foto-brev.jpg"' in attrs_img_only["current_week_plan"]
+    assert f'<img src="{url_img_2}" alt="Foto-brev.jpg"' in attrs_img_only["content"]
     # Should not have Vedhæftede filer header since there are no non-image documents
-    assert "### Vedhæftede filer" not in attrs_img_only["current_week_plan"]
+    assert "### Vedhæftede filer" not in attrs_img_only["content"]
 
 
 @pytest.mark.asyncio
@@ -1811,26 +1824,93 @@ async def test_weekly_plan_sensor_automatic_monday_transition(
     sensor = ZenbiWeeklyPlanSensor(
         coordinator, mock_config_entry, student_name="Albert Hansen"
     )
+    sensor_next = ZenbiNextWeeklyPlanSensor(
+        coordinator, mock_config_entry, student_name="Albert Hansen"
+    )
 
     # 1. On Sunday 2026-09-20 (end of week 38): current is W38, next is W39
     sunday_dt = datetime(2026, 9, 20, 18, 0, 0, tzinfo=timezone.utc)
     with patch("custom_components.zenbi.sensor.dt_util.now", return_value=sunday_dt):
-        assert sensor.native_value == "Uge 38 Plan"
+        assert sensor.native_value == 1
         attrs_sun = sensor.extra_state_attributes
-        assert "Besked for uge 38." in attrs_sun["current_week_plan"]
+        assert "Besked for uge 38." in attrs_sun["content"]
         assert attrs_sun["title"] == "Uge 38 Plan"
-        assert "Besked for uge 39." in attrs_sun["next_week_plan"]
-        assert attrs_sun["next_week_title"] == "Uge 39 Plan"
+
+        assert sensor_next.native_value == 1
+        attrs_sun_next = sensor_next.extra_state_attributes
+        assert "Besked for uge 39." in attrs_sun_next["content"]
+        assert attrs_sun_next["title"] == "Uge 39 Plan"
 
     # 2. On Monday 2026-09-21 at 00:00:01 / 16:13 (start of week 39): current MUST be W39, next is W40!
     monday_dt = datetime(2026, 9, 21, 16, 13, 0, tzinfo=timezone.utc)
     with patch("custom_components.zenbi.sensor.dt_util.now", return_value=monday_dt):
-        assert sensor.native_value == "Uge 39 Plan"
+        assert sensor.native_value == 1
         attrs_mon = sensor.extra_state_attributes
-        assert "Besked for uge 39." in attrs_mon["current_week_plan"]
+        assert "Besked for uge 39." in attrs_mon["content"]
         assert attrs_mon["title"] == "Uge 39 Plan"
-        assert "Besked for uge 40." in attrs_mon["next_week_plan"]
-        assert attrs_mon["next_week_title"] == "Uge 40 Plan"
+
+        assert sensor_next.native_value == 1
+        attrs_mon_next = sensor_next.extra_state_attributes
+        assert "Besked for uge 40." in attrs_mon_next["content"]
+        assert attrs_mon_next["title"] == "Uge 40 Plan"
+
+
+@pytest.mark.asyncio
+async def test_next_weekly_plan_sensor_empty_and_populated(mock_hass, mock_config_entry, mock_client):
+    """Test ZenbiNextWeeklyPlanSensor returns 0 and None attributes when no plan is posted for next week."""
+    coordinator = ZenbiCalendarDataUpdateCoordinator(mock_hass, mock_client, mock_config_entry)
+
+    today = dt_util.now().date()
+    start_cur = (today - timedelta(days=today.weekday())).isoformat() + "T00:00:00+02:00"
+    end_cur = (today + timedelta(days=6 - today.weekday())).isoformat() + "T23:59:59+02:00"
+
+    sched_cur = ZenbiWeeklySchedule(
+        id="ws-cur",
+        title="Ugeplan for denne uge",
+        start=start_cur,
+        end=end_cur,
+        description="Kun plan for denne uge er lagt op.",
+        raw_description="",
+    )
+
+    coordinator.data = ZenbiCalendarData(
+        students=["Albert Hansen"],
+        weekly_schedules=[sched_cur],
+    )
+
+    sensor_next = ZenbiNextWeeklyPlanSensor(coordinator, mock_config_entry, student_name="Albert Hansen")
+    # No schedule for next week yet -> state is 0
+    assert sensor_next.native_value == 0
+    attrs = sensor_next.extra_state_attributes
+    assert attrs["content"] is None
+    assert attrs["title"] is None
+    assert attrs["start_date"] is None
+    assert attrs["end_date"] is None
+    assert attrs["files"] == []
+
+    # Now teacher posts next week's plan
+    start_nxt = (today - timedelta(days=today.weekday()) + timedelta(days=7)).isoformat() + "T00:00:00+02:00"
+    end_nxt = (today + timedelta(days=6 - today.weekday()) + timedelta(days=7)).isoformat() + "T23:59:59+02:00"
+
+    sched_nxt = ZenbiWeeklySchedule(
+        id="ws-nxt",
+        title="Næste uge er lejrtur",
+        start=start_nxt,
+        end=end_nxt,
+        description="Husk sovepose og rygsæk.",
+        raw_description="",
+        files=[{"name": "Pakkeliste.pdf"}],
+    )
+    coordinator.data.weekly_schedules.append(sched_nxt)
+
+    assert sensor_next.native_value == 1
+    attrs_populated = sensor_next.extra_state_attributes
+    assert attrs_populated["content"] == "Husk sovepose og rygsæk.\n\n### Vedhæftede filer\n- Pakkeliste.pdf"
+    assert attrs_populated["title"] == "Næste uge er lejrtur"
+    assert attrs_populated["start_date"] == start_nxt
+    assert attrs_populated["end_date"] == end_nxt
+    assert attrs_populated["files"] == [{"name": "Pakkeliste.pdf", "is_image": False}]
+
 
 
 

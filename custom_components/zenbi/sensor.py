@@ -98,9 +98,15 @@ async def async_setup_entry(
             entities.append(
                 ZenbiWeeklyPlanSensor(coordinator, entry, student_name=student)
             )
+            entities.append(
+                ZenbiNextWeeklyPlanSensor(coordinator, entry, student_name=student)
+            )
     else:
         entities.append(
             ZenbiWeeklyPlanSensor(coordinator, entry, student_name=None)
+        )
+        entities.append(
+            ZenbiNextWeeklyPlanSensor(coordinator, entry, student_name=None)
         )
 
     # Diagnostic sync status timestamp sensor on the primary school/integration device
@@ -174,13 +180,12 @@ class ZenbiLastSyncedSensor(
         return attrs
 
 
-class ZenbiWeeklyPlanSensor(
+class ZenbiWeeklyPlanBaseSensor(
     CoordinatorEntity[ZenbiCalendarDataUpdateCoordinator], SensorEntity
 ):
-    """Sensor exposing active and upcoming weekly plans in clean Markdown."""
+    """Base class for Zenbi weekly plan sensors."""
 
     _attr_has_entity_name = True
-    _attr_translation_key = "weekly_plan"
 
     def __init__(
         self,
@@ -188,17 +193,10 @@ class ZenbiWeeklyPlanSensor(
         entry: ConfigEntry,
         student_name: Optional[str] = None,
     ) -> None:
-        """Initialize the weekly plan sensor."""
+        """Initialize the weekly plan base sensor."""
         super().__init__(coordinator)
         self.entry = entry
         self._student_name = student_name
-
-        if student_name:
-            slug = slugify_name(student_name)
-            self._attr_unique_id = f"{entry.entry_id}_{slug}_weekly_plan"
-        else:
-            self._attr_unique_id = f"{entry.entry_id}_weekly_plan"
-
         self._cached_device_info: DeviceInfo = self._build_device_info()
 
     def _build_device_info(self) -> DeviceInfo:
@@ -376,7 +374,7 @@ class ZenbiWeeklyPlanSensor(
                     )
                     images.append(img_html)
                 elif url:
-                    # Render non-image documents as download links 
+                    # Render non-image documents as download links
                     documents.append(f'<a href="{url}" target="_blank" download>{display_name}</a>')
                 else:
                     documents.append(display_name)
@@ -425,78 +423,135 @@ class ZenbiWeeklyPlanSensor(
 
         return "\n\n".join(parts)
 
+    @classmethod
+    def _extract_files_metadata(
+        cls, schedules: List[ZenbiWeeklySchedule], entry_id: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Extract structured metadata dicts for all attachments in the schedules."""
+        files: List[Dict[str, Any]] = []
+        seen_file_keys = set()
+        for s in schedules:
+            if s.files:
+                for f in s.files:
+                    if isinstance(f, dict):
+                        file_id = f.get("id") or f.get("fileId")
+                        raw_name = f.get("name") or f.get("title")
+                        key = file_id or raw_name
+                        if key and key not in seen_file_keys:
+                            seen_file_keys.add(key)
+                            is_img = is_image_file(f, raw_name)
+                            display_name = format_attachment_display_name(f, is_image=is_img)
+                            item: Dict[str, Any] = {
+                                "name": display_name,
+                                "is_image": is_img,
+                            }
+                            ext = f.get("extension")
+                            if isinstance(ext, str) and ext.strip():
+                                item["extension"] = ext.strip().lstrip(".")
+                            if f.get("size") is not None:
+                                item["size"] = f["size"]
+                            if file_id and entry_id:
+                                item["id"] = file_id
+                                item["url"] = f"/api/zenbi/file/{entry_id}/{file_id}"
+                            files.append(item)
+        return files
+
+
+class ZenbiWeeklyPlanSensor(ZenbiWeeklyPlanBaseSensor):
+    """Sensor exposing the current active week's plan count and content."""
+
+    _attr_translation_key = "weekly_plan"
+
+    def __init__(
+        self,
+        coordinator: ZenbiCalendarDataUpdateCoordinator,
+        entry: ConfigEntry,
+        student_name: Optional[str] = None,
+    ) -> None:
+        """Initialize the current weekly plan sensor."""
+        super().__init__(coordinator, entry, student_name)
+        if student_name:
+            slug = slugify_name(student_name)
+            self._attr_unique_id = f"{entry.entry_id}_{slug}_weekly_plan"
+        else:
+            self._attr_unique_id = f"{entry.entry_id}_weekly_plan"
+
     @property
-    def native_value(self) -> Optional[str]:
-        """Return the primary title of the active weekly plan."""
+    def native_value(self) -> int:
+        """Return the count of messages/schedules in the active week."""
         active_schedules, _ = self._get_active_and_next_groups()
-        if not active_schedules:
-            return None
-
-        # Prioritize schedule with description
-        with_desc = [s for s in active_schedules if s.description and s.description.strip()]
-        primary = with_desc[0] if with_desc else active_schedules[0]
-
-        title = primary.title or "Weekly Plan"
-        if len(active_schedules) > 1:
-            title = f"{title} (+{len(active_schedules) - 1} mere)"
-        return title[:255]
+        return len(active_schedules)
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
-        """Return extra state attributes containing Markdown text and metadata."""
-        attrs: Dict[str, Any] = {}
-        active_schedules, next_schedules = self._get_active_and_next_groups()
-        entry_id = self.entry.entry_id
+        """Return extra state attributes containing Markdown content and metadata."""
+        active_schedules, _ = self._get_active_and_next_groups()
+        if not active_schedules:
+            return {
+                "content": None,
+                "title": None,
+                "start_date": None,
+                "end_date": None,
+                "files": [],
+            }
 
-        if active_schedules:
-            with_desc = [s for s in active_schedules if s.description and s.description.strip()]
-            primary = with_desc[0] if with_desc else active_schedules[0]
+        with_desc = [s for s in active_schedules if s.description and s.description.strip()]
+        primary = with_desc[0] if with_desc else active_schedules[0]
 
-            attrs["current_week_plan"] = self._format_plan_text(
-                active_schedules, entry_id
-            )
-            attrs["title"] = primary.title
-            attrs["start_date"] = primary.start
-            attrs["end_date"] = primary.end
+        return {
+            "content": self._format_plan_text(active_schedules, self.entry.entry_id),
+            "title": primary.title,
+            "start_date": primary.start,
+            "end_date": primary.end,
+            "files": self._extract_files_metadata(active_schedules, self.entry.entry_id),
+        }
 
-            # Aggregate all files across active schedules as rich dicts
-            files: List[Dict[str, Any]] = []
-            seen_file_keys = set()
-            for s in active_schedules:
-                if s.files:
-                    for f in s.files:
-                        if isinstance(f, dict):
-                            file_id = f.get("id") or f.get("fileId")
-                            raw_name = f.get("name") or f.get("title")
-                            key = file_id or raw_name
-                            if key and key not in seen_file_keys:
-                                seen_file_keys.add(key)
-                                is_img = is_image_file(f, raw_name)
-                                display_name = format_attachment_display_name(f, is_image=is_img)
-                                item: Dict[str, Any] = {
-                                    "name": display_name,
-                                    "is_image": is_img,
-                                }
-                                ext = f.get("extension")
-                                if isinstance(ext, str) and ext.strip():
-                                    item["extension"] = ext.strip().lstrip(".")
-                                if f.get("size") is not None:
-                                    item["size"] = f["size"]
-                                if file_id:
-                                    item["id"] = file_id
-                                    item["url"] = f"/api/zenbi/file/{entry_id}/{file_id}"
-                                files.append(item)
-            if files:
-                attrs["files"] = files
 
-        if next_schedules:
-            with_desc = [s for s in next_schedules if s.description and s.description.strip()]
-            primary_next = with_desc[0] if with_desc else next_schedules[0]
+class ZenbiNextWeeklyPlanSensor(ZenbiWeeklyPlanBaseSensor):
+    """Sensor exposing next week's plan count and content."""
 
-            attrs["next_week_plan"] = self._format_plan_text(
-                next_schedules, entry_id
-            )
-            attrs["next_week_title"] = primary_next.title
-            attrs["next_week_start"] = primary_next.start
+    _attr_translation_key = "next_weekly_plan"
 
-        return attrs
+    def __init__(
+        self,
+        coordinator: ZenbiCalendarDataUpdateCoordinator,
+        entry: ConfigEntry,
+        student_name: Optional[str] = None,
+    ) -> None:
+        """Initialize the next weekly plan sensor."""
+        super().__init__(coordinator, entry, student_name)
+        if student_name:
+            slug = slugify_name(student_name)
+            self._attr_unique_id = f"{entry.entry_id}_{slug}_next_weekly_plan"
+        else:
+            self._attr_unique_id = f"{entry.entry_id}_next_weekly_plan"
+
+    @property
+    def native_value(self) -> int:
+        """Return the count of messages/schedules in next week's plan."""
+        _, next_schedules = self._get_active_and_next_groups()
+        return len(next_schedules)
+
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        """Return extra state attributes containing Markdown content and metadata for next week."""
+        _, next_schedules = self._get_active_and_next_groups()
+        if not next_schedules:
+            return {
+                "content": None,
+                "title": None,
+                "start_date": None,
+                "end_date": None,
+                "files": [],
+            }
+
+        with_desc = [s for s in next_schedules if s.description and s.description.strip()]
+        primary = with_desc[0] if with_desc else next_schedules[0]
+
+        return {
+            "content": self._format_plan_text(next_schedules, self.entry.entry_id),
+            "title": primary.title,
+            "start_date": primary.start,
+            "end_date": primary.end,
+            "files": self._extract_files_metadata(next_schedules, self.entry.entry_id),
+        }
