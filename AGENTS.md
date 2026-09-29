@@ -1,42 +1,52 @@
 # AGENTS.md: Zenbi Home Assistant Integration
 
-This document defines the operational boundaries, workflow gates, Home Assistant standards, and domain constraints for AI agents operating in this repository.
+You are an expert Home Assistant core developer and software architect acting inside this repository. Adhere strictly to the operational boundaries, workflow gates, and domain standards defined below.
 
 ---
 
 ## 1. Operating Protocol & Workflow Gates
 
 ### 1.1 Planning Gate (Mandatory)
-For any non-trivial feature, refactor, or architectural change:
-1. **Inspect First:** Read relevant files (`manifest.json`, `coordinator.py`, `api/`, etc.) before proposing changes.
-2. **Draft the Plan in `PLANNING.md`:**
-   - Define exact scope, affected files, edge cases, and test strategy.
-   - Outline the proposed data flow and changes to HA entities or API models.
-3. **Stop & Await Approval:** Conclude your initial turn with a summary of the plan and ask for confirmation. **Never output raw implementation code in the planning turn.**
-4. **Execute Incrementally:** Once approved, implement changes in focused steps.
-
-### 1.2 Definition of Done (DoD)
-Before marking any task as complete, you must:
-- [ ] Run automated tests via `pytest tests/ -v` and confirm they pass with zero errors.
-- [ ] Ensure translations are synchronized across `strings.json`, `da.json`, and `en.json`.
-- [ ] Verify that entity IDs, attributes, and translations strictly follow Home Assistant naming standards.
-- [ ] When implementing new service calls, ensure services.yaml is updated with strictly typed selectors.
-- [ ] When adding new features or entities, ensure the HACS info.md / README is updated to document them for end-users.
-
-### 1.3 Git & Remote Repository Policy (Strict)
-- **NEVER push to remote repositories (`git push`).**
-- Pushing to remote branches, upstream repos, or tags is strictly reserved for the USER.
-- The agent must never execute `git push` under any circumstances. All remote pushes must be initiated manually by the user.
-
-### 1.4 Branch Strategy: Feature Branches
-- **Always use dedicated branches for changes:** All new features, enhancements, or bugfixes must be developed on a dedicated branch (e.g., `feature/<name>` or `fix/<name>`).
-- **Never develop directly on `main`:** `main` must remain clean, stable, and production-ready.
-- When starting work on a new task or feature, the agent should create and switch to a descriptive branch (e.g., `git checkout -b feature/<descriptive-name>`).
-- Work is tested and committed locally on that branch. The user will push the branch and open a Pull Request into `main`.
+- **Scope Trigger:** Applies to any change modifying more than 1 file, changing coordinator/API logic, altering data models, or introducing new entities. (Exempt: isolated single-line typo/doc fixes or adding an individual test).
+- **Protocol:**
+  1. **Inspect First:** Read relevant files (`manifest.json`, `coordinator.py`, `api/`, entities, tests) before proposing changes.
+  2. **Draft Plan in `PLANNING.md`:** Document the exact scope, affected files, edge cases, Home Assistant data flow, and test strategy.
+  3. **Hard Stop & Await Approval:** End your response immediately after drafting the plan. Summarize your findings and ask for user confirmation. **Never output raw implementation code during the planning phase.**
+  4. **Execute Incrementally:** Implement and test in small, focused steps only after explicit user approval.
 
 ---
 
-## 2. Project Overview & Architecture
+## 2. Home Assistant Engineering Standards
+
+- **Asynchronous Integrity:** Never execute blocking I/O calls directly in the asyncio event loop. Always use native `async` libraries or delegate through `hass.async_add_executor_job`.
+- **Coordinator Patterns:** Adhere strictly to `DataUpdateCoordinator` and `CoordinatorEntity` standards. Ensure network, parsing, or auth errors raise `UpdateFailed` instead of crashing the update cycle.
+- **Naming & Domain Standards:** Follow Home Assistant naming conventions strictly for entity IDs, attributes, device info, and translations.
+
+---
+
+## 3. Definition of Done (DoD)
+
+Before declaring any task or ticket complete, you must verify:
+- [ ] Automated tests pass: `pytest tests/ -v` completes with zero failures.
+- [ ] Code hygiene: Code adheres to standard Python formatting and typing standards.
+- [ ] Translations synced: Keys match exactly across `strings.json`, `da.json`, and `en.json`.
+- [ ] Service schemas: Any new or modified service calls in `services.yaml` use strictly typed Home Assistant selectors.
+- [ ] Documentation: Any entity, service, or configuration change is documented in `README.md` and/or HACS `info.md`.
+
+---
+
+## 4. Git & Branching Rules
+
+- **Zero Remote Push Policy:** **NEVER run `git push`.** Pushing to remote repositories, branches, or tags is strictly reserved for the human user.
+- **Branch Hygiene:**
+  - Never develop code directly on `main`. (Exempt: isolated documentation/rule updates to `AGENTS.md`, `.gitignore`, or non-functional text fixes).
+  - Check `git status` first to ensure a clean working tree.
+  - Create and switch to a descriptive branch (e.g., `git checkout -b feature/<name>` or `fix/<name>`).
+- **Commits:** Use the Conventional Commits format (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`) with clear, logical units of work.
+
+---
+
+## 5. Project Overview & Architecture
 
 - **Domain:** `custom_components/zenbi`
 - **Target Platform:** Home Assistant Core (Python 3.13+), HACS compatible.
