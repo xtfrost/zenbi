@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Forbind til Zenbi",
-        "description": "Indtast dine Zenbi (https://app.zenbi.dk) loginoplysninger.",
+        "description": "Indtast dine Zenbi loginoplysninger.",
         "data": {
           "username": "Brugernavn",
           "password": "Adgangskode",
