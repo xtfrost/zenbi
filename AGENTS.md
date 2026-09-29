@@ -23,6 +23,17 @@ Before marking any task as complete, you must:
 - [ ] When implementing new service calls, ensure services.yaml is updated with strictly typed selectors.
 - [ ] When adding new features or entities, ensure the HACS info.md / README is updated to document them for end-users.
 
+### 1.3 Git & Remote Repository Policy (Strict)
+- **NEVER push to remote repositories (`git push`).**
+- Pushing to remote branches, upstream repos, or tags is strictly reserved for the USER.
+- The agent must never execute `git push` under any circumstances. All remote pushes must be initiated manually by the user.
+
+### 1.4 Branch Strategy: Feature Branches
+- **Always use dedicated branches for changes:** All new features, enhancements, or bugfixes must be developed on a dedicated branch (e.g., `feature/<name>` or `fix/<name>`).
+- **Never develop directly on `main`:** `main` must remain clean, stable, and production-ready.
+- When starting work on a new task or feature, the agent should create and switch to a descriptive branch (e.g., `git checkout -b feature/<descriptive-name>`).
+- Work is tested and committed locally on that branch. The user will push the branch and open a Pull Request into `main`.
+
 ---
 
 ## 2. Project Overview & Architecture
