@@ -1185,32 +1185,34 @@ async def test_weekly_plan_sensor_attributes(mock_hass, mock_config_entry, mock_
         weekly_schedules=[sched_current, sched_next],
     )
 
-    sensor = ZenbiWeeklyPlanSensor(coordinator, mock_config_entry, student_name="Albert Hansen")
-    assert sensor.unique_id == "entry_123_albert_hansen_weekly_plan"
-    assert sensor.translation_key == "weekly_plan"
-    assert sensor.device_info.name == "Zenbi (Albert Hansen)"
+    fixed_now = datetime(2026, 9, 23, 12, 0, 0, tzinfo=timezone(timedelta(hours=2)))
+    with patch("custom_components.zenbi.sensor.dt_util.now", return_value=fixed_now):
+        sensor = ZenbiWeeklyPlanSensor(coordinator, mock_config_entry, student_name="Albert Hansen")
+        assert sensor.unique_id == "entry_123_albert_hansen_weekly_plan"
+        assert sensor.translation_key == "weekly_plan"
+        assert sensor.device_info.name == "Zenbi (Albert Hansen)"
 
-    # State is current week message count
-    assert sensor.native_value == 1
+        # State is current week message count
+        assert sensor.native_value == 1
 
-    attrs = sensor.extra_state_attributes
-    # Current week markdown content
-    assert "content" in attrs
-    assert "H.C. Andersen" in attrs["content"]
-    assert attrs["title"] == "Uge 39 - Dansk tema"
-    assert attrs["files"] == [{"name": "hc_andersen_tekst.pdf", "is_image": False}]
+        attrs = sensor.extra_state_attributes
+        # Current week markdown content
+        assert "content" in attrs
+        assert "H.C. Andersen" in attrs["content"]
+        assert attrs["title"] == "Uge 39 - Dansk tema"
+        assert attrs["files"] == [{"name": "hc_andersen_tekst.pdf", "is_image": False}]
 
-    # Next week sensor
-    sensor_next = ZenbiNextWeeklyPlanSensor(coordinator, mock_config_entry, student_name="Albert Hansen")
-    assert sensor_next.unique_id == "entry_123_albert_hansen_next_weekly_plan"
-    assert sensor_next.translation_key == "next_weekly_plan"
-    assert sensor_next.device_info.name == "Zenbi (Albert Hansen)"
-    assert sensor_next.native_value == 1
+        # Next week sensor
+        sensor_next = ZenbiNextWeeklyPlanSensor(coordinator, mock_config_entry, student_name="Albert Hansen")
+        assert sensor_next.unique_id == "entry_123_albert_hansen_next_weekly_plan"
+        assert sensor_next.translation_key == "next_weekly_plan"
+        assert sensor_next.device_info.name == "Zenbi (Albert Hansen)"
+        assert sensor_next.native_value == 1
 
-    attrs_next = sensor_next.extra_state_attributes
-    assert "content" in attrs_next
-    assert "brøker" in attrs_next["content"]
-    assert attrs_next["title"] == "Uge 40 - Matematikuge"
+        attrs_next = sensor_next.extra_state_attributes
+        assert "content" in attrs_next
+        assert "brøker" in attrs_next["content"]
+        assert attrs_next["title"] == "Uge 40 - Matematikuge"
 
 
 @pytest.mark.asyncio

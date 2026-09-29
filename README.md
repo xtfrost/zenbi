@@ -16,9 +16,9 @@ This integration brings school schedules, homework tasks, weekly letters ("ugebr
 ## Features
 
 - 📅 **Timed Class Schedule (`calendar.zenbi_schedule` / `Skema`)**:
-  - Displays daily timed classes with start/end times and subjects.
+  - Displays daily timed classes with start/end times, subjects, and teacher notes.
   - Automatically correlates and includes **homework** for each subject.
-  - Shows classroom resources, substitute teachers, notes, and planning markers.
+  - Provides structured attributes (`agenda_today`, `classes_today`) for automations and daily briefings.
 - 📬 **Weekly Messages (`calendar.zenbi_weekly_messages` / `Ugebreve`)**:
   - Weekly class letters and schedules ("Ugeplaner") represented as 7-day all-day events.
   - Automatically parses text preview and lists attached file names.
@@ -31,25 +31,6 @@ This integration brings school schedules, homework tasks, weekly letters ("ugebr
   - Interactively check off tasks directly from your Lovelace dashboard.
 - 🇩🇰 **Full Danish Localization**:
   - UI configuration, options dialogs, and entity names natively support Danish (`da`) and English (`en`).
-- 🔤 **Markdown & Quill Delta Parsing**:
-  - Converts Zenbi's internal Quill Delta rich-text JSON into clean GitHub-flavored Markdown.
-  - Full native support for Danish special characters (`æ`, `ø`, `å`, `Æ`, `Ø`, `Å`), bullet lists (`- item`), numbered lists, links, and bold/italic styles.
-- 🔒 **Persistent Device ID & Anti-Spam Login Protection**:
-  - Uses a deterministic RFC 4122 UUID per account to prevent Zenbi's security system from flagging each sync as a "new browser login".
-  - Optionally allows cloning your desktop browser's existing device ID from `localStorage`.
-- ⚡ **Asynchronous & Concurrent**:
-  - Fully asynchronous client powered by `asyncio.gather` for parallelized endpoint querying.
-  - Error isolation: Non-critical endpoint failures never break the primary school timetable.
-  - Zero memory leaks: Clean replacement of state data on every sync cycle.
-- 🔄 **Re-Authentication Flow**:
-  - If school credentials expire or change, Home Assistant prompts for an updated password via the UI without requiring re-configuration.
-- 🩺 **Diagnostics Platform**:
-  - Native Home Assistant diagnostics support with automatic redaction of passwords, tokens, and device identifiers.
-- 🧹 **Lifecycle Safety & Storage Integrity**:
-  - Persistent completed homework states saved atomically via Home Assistant's native `Store` helper (`.storage/zenbi.<entry_id>`).
-  - Automated cleanup in `async_remove_entry` purging storage files upon uninstallation.
-  - Standalone entity provisioning with zero injection or pollution of native `local_calendar` or `local_todo`.
-  - Safe unloading preserving shared `aiohttp` connections while cleanly terminating coordinator update timers.
 
 ---
 
@@ -82,16 +63,12 @@ This integration brings school schedules, homework tasks, weekly letters ("ugebr
    - **Device ID (Optional)**: If you want Zenbi to treat Home Assistant as your already-trusted desktop browser, copy your `uniqueDeviceId` from your browser's DevTools (`F12` > Application > Local Storage > `https://app.zenbi.dk`). Leaving this blank will automatically generate a stable, deterministic device ID.
 4. Click **Submit**.
 
-### Integration Options & Polling Frequency
+### Integration Options
 To adjust update intervals:
 1. Go to **Settings** > **Devices & Services** > **Zenbi**.
 2. Click **Configure**.
 3. Customize:
    - **Calendar Sync Interval (hours)**: Default is `6` hours (supports `1` to `168` hours).
-
-> [!NOTE]
-> **Is Hourly Polling Safe?**
-> Yes! Setting the interval to `1` hour is completely safe and within Zenbi API limits. Each poll executes only 4 lightweight GET requests concurrently, and the integration retains and reuses the active JWT authentication token across polls (only refreshing when it nears its 24h+ expiration). Hourly polling amounts to 96 requests over a 24-hour period—far below any rate-limiting or security thresholds and indistinguishable from standard browser usage.
 
 ---
 
@@ -107,7 +84,7 @@ When an account is connected, Zenbi automatically discovers all enrolled childre
 
 | Entity ID | Default Name (DA / EN) | Device | Description |
 | :--- | :--- | :--- | :--- |
-| `calendar.zenbi_{student}_schedule` | Skema / Schedule | Student | Timed school timetable, subjects, classroom resources, substitutes, and homework. |
+| `calendar.zenbi_{student}_schedule` | Skema / Schedule | Student | Timed school timetable, subjects, teacher notes, and homework. |
 | `todo.zenbi_{student}_homework` | Lektier / Homework | Student | Dedicated checklist of homework tasks with due dates, previews, and completion toggles. |
 | `sensor.zenbi_{student}_weekly_plan` | Ugeplan / Weekly Plan | Student | Active weekly plan (state = message count) with formatted Markdown `content` and `files` attributes. |
 | `sensor.zenbi_{student}_next_weekly_plan` | Ugeplan næste uge / Next Weekly Plan | Student | Next week's plan (state = message count, `0` until published) with formatted Markdown `content` and `files` attributes. |
@@ -117,158 +94,17 @@ When an account is connected, Zenbi automatically discovers all enrolled childre
 
 ---
 
-## Lovelace Dashboard Examples
+## Automation & Dashboard Examples
 
-Here are ready-to-use Lovelace dashboard configurations to get the most out of your Zenbi school data.
+Ready-to-use YAML examples and dashboard card configurations are provided in the [`examples/`](examples/) directory:
 
-### 1. Weekly Plan (Ugeplan) Markdown Cards
-Renders the active week's plan with rich formatting, inline image previews (PNG, JPG, etc.), and clickable file attachment links. Uses Home Assistant's native `conditional` card so next week's plan only appears once the teacher publishes it:
-
-```yaml
-# Denne uges plan
-- type: markdown
-  title: >-
-    📋 Ugeplan ({{ state_attr('sensor.zenbi_weekly_plan', 'title') or 'Denne uge' }})
-  content: >-
-    {% set plan = state_attr('sensor.zenbi_weekly_plan', 'content') %}
-    {{ plan if plan else '_Ingen ugeplan fundet for denne uge._' }}
-
-# Næste uges plan (skjult indtil den udgives, da state er 0)
-- type: conditional
-  conditions:
-    - entity: sensor.zenbi_next_weekly_plan
-      state_not: "0"
-  card:
-    type: markdown
-    title: >-
-      🔮 Næste uge: {{ state_attr('sensor.zenbi_next_weekly_plan', 'title') or 'Ugeplan' }}
-    content: >-
-      {{ state_attr('sensor.zenbi_next_weekly_plan', 'content') }}
-```
-
-> [!TIP]
-> **Attached Files Attribute**: Both weekly plan sensors expose a structured `files` attribute list for custom dashboard cards or automation scripts:
-> ```yaml
-> # Example items in state_attr('sensor.zenbi_weekly_plan', 'files'):
-> # - name: "Fritter-kalender-26-27-uge-37.pdf"
-> #   extension: "pdf"
-> #   size: 176406
-> #   is_image: false
-> #   url: "/api/zenbi/file/<entry_id>/<file_id>"
-> ```
-
-
-### 2. Timed Class Schedule (Calendar Card)
-Displays daily class schedule alongside school holidays and semester milestones:
-
-```yaml
-type: calendar
-title: Skoleskema
-initial_view: dayGridMonth
-entities:
-  - calendar.zenbi_schedule
-  - calendar.zenbi_planning
-```
-
-> [!TIP]
-> **Daily Agendas & Visibility Engine (`agenda_today` & `agenda_tomorrow`)**:
-> The schedule calendar entity (`calendar.zenbi_{student}_schedule`) exposes structured attributes designed for automations, TTS announcements, and card visibility:
-> - `classes_today`: Number of classes scheduled today (`0` on weekends/holidays).
-> - `classes_tomorrow`: Number of classes scheduled tomorrow.
-> - `agenda_today`: Chronological list of today's classes (`title`, `time`, `start_time`, `end_time`, `location`, `substitutes`, `has_homework`, `homework`, `note`).
-> - `agenda_tomorrow`: Chronological list of tomorrow's classes.
->
-> **Lovelace Visibility Rule Example (only show card when school is in session today)**:
-> ```yaml
-> visibility:
->   - condition: template
->     value_template: "{{ state_attr('calendar.zenbi_schedule', 'classes_today') > 0 }}"
-> ```
->
-> **Markdown Today's Schedule Card**:
-> ```yaml
-> type: markdown
-> title: Dagens Skema
-> content: >-
->   {% if state_attr('calendar.zenbi_schedule', 'classes_today') > 0 %}
->   {% for c in state_attr('calendar.zenbi_schedule', 'agenda_today') %}
->   - **{{ c.start_time }} - {{ c.end_time }}**: {{ c.title }}{% if c.location %} *({{ c.location }})*{% endif %}{% if c.has_homework %} 📚{% endif %}
->   {% endfor %}
->   {% else %}
->   Ingen lektioner i dag 🎉
->   {% endif %}
-> ```
-
-
-### 3. Homework Checklist (To-do List Card)
-An interactive checklist of school assignments that syncs completion status persistently:
-
-```yaml
-type: todo-list
-entity: todo.zenbi_homework
-title: Lektier
-```
-
-### 4. Integration Sync Status (Tile Card)
-Displays the timestamp of the last successful sync with relative time formatting, along with diagnostic status:
-
-```yaml
-type: tile
-entity: sensor.zenbi_last_synced
-name: Zenbi Synkronisering
-icon: mdi:sync
-```
-
-### 5. Complete Student Dashboard (Vertical Stack)
-Combine all cards into a single cohesive school dashboard view:
-
-```yaml
-type: vertical-stack
-cards:
-  - type: tile
-    entity: sensor.zenbi_last_synced
-    name: Zenbi Status
-    icon: mdi:school-outline
-
-  - type: todo-list
-    entity: todo.zenbi_homework
-    title: Lektier
-
-  - type: calendar
-    entities:
-      - calendar.zenbi_schedule
-      - calendar.zenbi_planning
-    initial_view: dayGridMonth
-    title: Skema & Årsplan
-
-  - type: markdown
-    title: Ugeplan
-    content: >-
-      {{ state_attr('sensor.zenbi_weekly_plan', 'content') }}
-```
+- [**School Overview Dashboard Cards**](examples/dashboards/school_dashboard_card.yaml): Complete Lovelace vertical stack featuring a daily timetable with homework indicators, current & next week's plans (with automatic conditional visibility), and an interactive homework checklist.
+- [**Notify on New Homework**](examples/automations/notify_new_homework.yaml): Push notification alerting parents when new homework is assigned or updated with summaries and due dates.
+- [**Notify on New Weekly Plan**](examples/automations/notify_new_weekly_plan.yaml): Alert when next week's plan or a new weekly plan message is posted by teachers.
+- [**Morning School Briefing**](examples/automations/morning_schedule_briefing.yaml): Automated morning push notification or TTS announcement detailing today's lessons and homework due (automatically skips weekends and holidays).
 
 > [!TIP]
 > If you have multiple children enrolled in Zenbi, their entities will automatically include their name slug (e.g. `calendar.zenbi_albert_schedule`, `todo.zenbi_albert_homework`, `sensor.zenbi_albert_weekly_plan`, and `sensor.zenbi_albert_next_weekly_plan`). Simply substitute the entity ID corresponding to each child.
-
-### On-Demand Attachment Downloads & Inline Images
-Zenbi attachment files (e.g. SFO calendars, classroom handouts, homework files) are served via an on-demand proxy endpoint (`/api/zenbi/file/{entry_id}/{file_id}`). When clicked from dashboard cards, Home Assistant automatically generates a fresh Azure Blob SAS token and redirects to the download, ensuring attachment links never expire.
-
-- **Inline Images**: Image attachments (`.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`) attached to teacher letters are automatically embedded as responsive inline images directly inside the Weekly Plan Markdown sensor, with clickable links to view them full-resolution in a new tab.
-- **Document Downloads**: Non-image documents (`.pdf`, `.docx`, etc.) appear under `### Vedhæftede filer` formatted with `target="_blank"` and `download` attributes so clicking them initiates native downloads without navigating away from your dashboard.
-- **SAS Caching**: Generated download URLs are cached in-memory for 50 minutes, ensuring fast image loads on dashboards with minimal API calls.
-
----
-
-## Automation & Dashboard Examples
-
-Ready-to-use YAML examples are provided in the [`examples/`](examples/) directory:
-
-- [**Notify on New Homework**](examples/automations/notify_new_homework.yaml): Push notification alerting parents when new homework is assigned or updated with summaries and due dates.
-- [**Notify on New Weekly Plan**](examples/automations/notify_new_weekly_plan.yaml): Alert when next week's plan or a new weekly plan message is posted by teachers.
-- [**Morning School Briefing**](examples/automations/morning_schedule_briefing.yaml): Automated morning push notification or TTS announcement detailing today's lessons, room assignments, and homework due (automatically skips weekends and holidays).
-- [**School Overview Dashboard Cards**](examples/dashboards/school_dashboard_card.yaml): Production-ready Lovelace cards including a daily timetable with homework badges, weekly plan markdown with attachments, and native todo checklist.
-
----
 
 ## Standalone Diagnostic Script (`scripts/test_live.py`)
 

@@ -21,31 +21,19 @@ Zenbi automatically detects all enrolled students and creates dedicated devices:
 
 | Entity | Platform | Device | Description |
 | :--- | :--- | :--- | :--- |
-| `calendar.zenbi_{student}_schedule` | Calendar | Student | Timed class schedule (**Skema**), classrooms, teachers, and attached homework. |
+| `calendar.zenbi_{student}_schedule` | Calendar | Student | Timed class schedule (**Skema**), teacher notes, and attached homework. |
 | `todo.zenbi_{student}_homework` | Todo List | Student | Interactive checklist of school homework (**Lektier**) with due dates and descriptions. |
-| `sensor.zenbi_{student}_weekly_plan` | Sensor | Student | Active weekly plan (**Ugeplan**) with clean Markdown text attributes for dashboard cards. |
+| `sensor.zenbi_{student}_weekly_plan` | Sensor | Student | Active weekly plan (**Ugeplan**) with clean Markdown text attributes and file links. |
+| `sensor.zenbi_{student}_next_weekly_plan` | Sensor | Student | Next week's plan (**Ugeplan næste uge**) with clean Markdown text attributes and file links. |
 | `calendar.zenbi_planning` | Calendar | School | Semester milestones, school vacations, and all-day events (**Årsplan**). |
 | `calendar.zenbi_weekly_messages` | Calendar | School | 7-day all-day events for weekly teacher letters (**Ugebreve**) with attachment previews. |
 | `sensor.zenbi_last_synced` | Sensor | School | Diagnostic timestamp (**Sidst synkroniseret**) and health attributes for sync tracking. |
 
 ---
 
-## Lovelace Dashboard Examples
+## Dashboard & Automation Examples
 
-### Weekly Plan (Ugeplan) Markdown Card
-```yaml
-type: markdown
-title: Ugeplan
-content: '{{ state_attr("sensor.zenbi_weekly_plan", "current_week_plan") }}'
-```
-
-### Sync Status Tile Card
-```yaml
-type: tile
-entity: sensor.zenbi_last_synced
-name: Zenbi Synkronisering
-icon: mdi:sync
-```
+Ready-to-use Lovelace dashboard cards and automations (such as new homework notifications, morning schedule briefings, and conditional weekly plans) are available in the [`examples/`](examples/) directory.
 
 ---
 
