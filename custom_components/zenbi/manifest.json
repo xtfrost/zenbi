@@ -1,11 +1,11 @@
 {
   "domain": "zenbi",
   "name": "Zenbi",
-  "codeowners": ["@thomas"],
+  "codeowners": ["@xtfrost"],
   "config_flow": true,
-  "documentation": "https://github.com/custom-components/zenbi",
+  "documentation": "https://github.com/xtfrost/zenbi",
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/custom-components/zenbi/issues",
+  "issue_tracker": "https://github.com/xtfrost/zenbi/issues",
   "requirements": [],
   "version": "1.0.0"
 }

@@ -1,7 +1,7 @@
 # Zenbi Home Assistant Integration
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/default)
-[![GitHub release](https://img.shields.io/github/v/release/custom-components/zenbi?include_prereleases&style=flat-square)](https://github.com/custom-components/zenbi/releases)
+[![GitHub release](https://img.shields.io/github/v/release/xtfrost/zenbi?include_prereleases&style=flat-square)](https://github.com/xtfrost/zenbi/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A custom [Home Assistant](https://www.home-assistant.io/) integration for the Danish school platform **Zenbi** ([app.zenbi.dk](https://app.zenbi.dk)).

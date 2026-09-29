@@ -22,6 +22,12 @@
     "sensor": {
       "weekly_plan": {
         "default": "mdi:bulletin-board"
+      },
+      "next_weekly_plan": {
+        "default": "mdi:calendar-arrow-right"
+      },
+      "last_synced": {
+        "default": "mdi:sync"
       }
     }
   }
