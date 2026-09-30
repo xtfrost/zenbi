@@ -644,4 +644,81 @@ def test_weekly_schedule_bold_title_extraction():
     assert schedule.title == "Kære forældre i Pluto"
 
 
+def test_global_data_active_timeframe_resolution():
+    """Test that ZenbiGlobalData resolves active timeframe by date, skipping obsolete drafts."""
+    raw_globaldata = {
+        "timeframes": [
+            {
+                "id": "tf-trash",
+                "name": "Slettes",
+                "start": "2025-10-01T00:00:00+02:00",
+                "end": "2026-08-01T00:00:00+02:00",
+            },
+            {
+                "id": "tf-past",
+                "name": "2024/2025",
+                "start": "2024-08-01T00:00:00+00:00",
+                "end": "2025-08-01T00:00:00+00:00",
+            },
+            {
+                "id": "tf-active",
+                "name": "2026/2027",
+                "start": "2026-08-01T00:00:00+00:00",
+                "end": "2027-08-01T00:00:00+00:00",
+            },
+        ]
+    }
+
+    # Reference date within 2026/2027 school year
+    ref_dt = datetime(2026, 10, 15, 12, 0, tzinfo=timezone.utc)
+    gd = ZenbiGlobalData.from_dict(raw_globaldata, target_date=ref_dt)
+    assert gd.timeframe_id == "tf-active"
+
+    # Direct timeframeId precedence
+    direct_gd = ZenbiGlobalData.from_dict({"timeframeId": "tf-direct", "timeframes": [{"id": "tf-other"}]})
+    assert direct_gd.timeframe_id == "tf-direct"
+
+
+@pytest.mark.asyncio
+async def test_planning_labels_with_label_types_enrichment():
+    """Test that get_planning_labels enriches labels using labelTypes metadata."""
+    mock_payload = {
+        "labels": [
+            {
+                "id": "lbl-1",
+                "title": "Efterårsferie",
+                "date": "2026-10-15T10:00:00",
+                "labelTypeId": "type-ferie",
+            }
+        ],
+        "labelTypes": [
+            {
+                "id": "type-ferie",
+                "title": "Ferie",
+                "color": "system-element-colors dark azure bg",
+            }
+        ],
+    }
+
+    mock_session = MagicMock(spec=aiohttp.ClientSession)
+    mock_session.closed = False
+    mock_resp = AsyncMock()
+    mock_resp.status = 200
+    mock_resp.json = AsyncMock(return_value=mock_payload)
+    mock_session.request.return_value.__aenter__.return_value = mock_resp
+
+    client = ZenbiApiClient("user", "pass", session=mock_session)
+    client._token = "valid-token"
+    client._token_expiry = time.time() + 3600
+
+    labels = await client.get_planning_labels(timeframe_id="tf-active")
+    assert len(labels) == 1
+    assert labels[0].id == "lbl-1"
+    assert labels[0].title == "Efterårsferie"
+    assert labels[0].start_date == "2026-10-15T10:00:00"
+    assert labels[0].color == "system-element-colors dark azure bg"
+    assert labels[0].description == "Ferie"
+
+
+
 

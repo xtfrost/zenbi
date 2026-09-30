@@ -349,6 +349,7 @@ class ZenbiPlanningLabel:
     description: str = ""
     color: Optional[str] = None
     icon: Optional[str] = None
+    label_type_id: Optional[str] = None
     raw_data: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -356,9 +357,9 @@ class ZenbiPlanningLabel:
         # Handle flexible key names in planning labels (e.g., name vs title, date vs start)
         title = data.get("title") or data.get("name") or data.get("label") or "All-day Event"
         start_date = (
-            data.get("start")
+            data.get("date")
+            or data.get("start")
             or data.get("startDate")
-            or data.get("date")
             or data.get("timeframeStart")
             or ""
         )
@@ -375,6 +376,7 @@ class ZenbiPlanningLabel:
             description=clean_desc,
             color=data.get("color"),
             icon=data.get("icon"),
+            label_type_id=data.get("labelTypeId") or data.get("label_type_id"),
             raw_data=data,
         )
 
@@ -387,17 +389,62 @@ class ZenbiGlobalData:
     raw_data: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ZenbiGlobalData":
-        # Search common fields for timeframe ID in globaldata bootstrap
+    def from_dict(
+        cls,
+        data: Dict[str, Any],
+        target_date: Optional[datetime] = None,
+    ) -> "ZenbiGlobalData":
+        # Search direct fields for timeframe ID in globaldata bootstrap
         timeframe_id = (
             data.get("timeframeId")
             or data.get("currentTimeframeId")
             or (data.get("timeframe") or {}).get("id")
             or (data.get("activeTimeframe") or {}).get("id")
         )
-        # Fallback: search top-level keys if nested in lists or objects
+
+        # Fallback: search 'timeframes' list by matching current date and filtering out trash like 'slettes'
         if not timeframe_id and isinstance(data.get("timeframes"), list) and len(data["timeframes"]) > 0:
-            timeframe_id = data["timeframes"][0].get("id")
+            from datetime import timezone
+            ref_dt = target_date or datetime.now(timezone.utc)
+            if ref_dt.tzinfo is None:
+                ref_dt = ref_dt.replace(tzinfo=timezone.utc)
+
+            candidate_id: Optional[str] = None
+            valid_timeframes = []
+
+            for tf in data["timeframes"]:
+                if not isinstance(tf, dict):
+                    continue
+                tf_name = (tf.get("name") or "").strip().lower()
+                # Skip drafts/deprecated names like 'slet', 'slettes', 'test'
+                if any(x in tf_name for x in ("slet", "test", "deprecated")):
+                    continue
+                valid_timeframes.append(tf)
+
+                # Check date range: start <= ref_dt <= end
+                start_raw = tf.get("start")
+                end_raw = tf.get("end")
+                if start_raw and end_raw:
+                    try:
+                        s_dt = datetime.fromisoformat(str(start_raw))
+                        e_dt = datetime.fromisoformat(str(end_raw))
+                        if s_dt.tzinfo is None:
+                            s_dt = s_dt.replace(tzinfo=timezone.utc)
+                        if e_dt.tzinfo is None:
+                            e_dt = e_dt.replace(tzinfo=timezone.utc)
+
+                        if s_dt <= ref_dt <= e_dt:
+                            candidate_id = tf.get("id")
+                            break
+                    except (ValueError, TypeError):
+                        pass
+
+            if candidate_id:
+                timeframe_id = candidate_id
+            elif valid_timeframes:
+                timeframe_id = valid_timeframes[0].get("id")
+            else:
+                timeframe_id = data["timeframes"][0].get("id")
 
         return cls(
             timeframe_id=timeframe_id,

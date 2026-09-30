@@ -478,8 +478,22 @@ flowchart TD
   - Updated `README.md` entities table and dashboard card snippets.
 - [x] **Automated Testing (`tests/test_integration.py`)**:
   - Added test for `ZenbiNextWeeklyPlanSensor` empty vs populated behavior.
-  - Updated all integration tests to verify numeric message count state and `content` attribute (67/67 passing).
+  - Updated all integration tests to verify numeric message count state and `content` attribute (67/67 passing).---
 
-
-
-
+### Phase 18: Planning Calendar & Labels Timeframe Resolution (In Progress)
+- [ ] **Root Cause Identified**:
+  - The Zenbi backend returns multiple school year timeframes in `/globaldata` (`timeframes` array).
+  - Index 0 was an obsolete/draft timeframe named `"Slettes"` with zero planning labels.
+  - The fallback `data["timeframes"][0]` selected this empty timeframe instead of the active school year (`"2026/2027"` with start `2026-08-01` to end `2027-08-01`).
+  - Active timeframe `"2026/2027"` contains 57 planning labels including all holiday periods (Efterårsferie, Juleferie, Vinterferie, Påskeferie, etc.).
+- [ ] **Timeframe Resolution Strategy (`models.py`)**:
+  - In `ZenbiGlobalData.from_dict`:
+    - Rather than blindly taking `timeframes[0]`, select the timeframe encompassing current date (`start <= now <= end`).
+    - Filter out timeframes with names matching "slet" / "slettes" or invalid spans.
+- [ ] **Label & Type Parsing (`models.py`, `client.py`)**:
+  - Parse `labelTypes` to extract label category titles and CSS colors.
+  - Parse `date` field in `ZenbiPlanningLabel.from_dict` correctly into ISO date strings.
+- [ ] **Calendar Entity Improvements (`calendar.py`)**:
+  - Merge consecutive identical daily labels (e.g. Efterårsferie Mon-Wed and Thu-Fri) into single multi-day CalendarEvent ranges, creating clean multi-day calendar bars in Home Assistant.
+- [ ] **Automated Testing**:
+  - Unit tests in `test_api_client.py` and `test_integration.py` verifying active timeframe resolution and multi-day label events.

@@ -642,12 +642,37 @@ def main():
     )
     args = parser.parse_args()
 
-    username = args.username or input("Zenbi Username: ").strip()
-    password = args.password or getpass.getpass("Zenbi Password: ")
+    username = args.username
+    password = args.password
 
-    if not username or not password:
+    cached_device_id, cached_token, cached_expiry = (
+        (None, None, None) if args.no_cache or not username else load_cached_session(username)
+    )
+
+    if not username:
+        # Check if session file has a default username
+        if not args.no_cache and SESSION_FILE.exists():
+            try:
+                with open(SESSION_FILE, "r", encoding="utf-8") as f:
+                    u_cached = json.load(f).get("username")
+                    if u_cached:
+                        username = u_cached
+                        cached_device_id, cached_token, cached_expiry = load_cached_session(username)
+            except Exception:
+                pass
+        if not username:
+            username = input("Zenbi Username: ").strip()
+            if not args.no_cache:
+                cached_device_id, cached_token, cached_expiry = load_cached_session(username)
+
+    if not password and not cached_token:
+        password = getpass.getpass("Zenbi Password: ")
+
+    if not username or (not password and not cached_token):
         print("Error: Username and password are required.")
         sys.exit(1)
+
+    password = password or ""
 
     asyncio.run(
         test_zenbi(
