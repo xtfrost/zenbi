@@ -305,15 +305,36 @@ class ZenbiApiClient:
             return []
 
         labels_raw: List[Dict[str, Any]] = []
+        label_types: List[Dict[str, Any]] = []
         if isinstance(data, list):
             labels_raw = data
         elif isinstance(data, dict):
+            if isinstance(data.get("labelTypes"), list):
+                label_types = data["labelTypes"]
             for key in ("labels", "data", "items", "labelList"):
                 if isinstance(data.get(key), list):
                     labels_raw = data[key]
                     break
 
-        return [ZenbiPlanningLabel.from_dict(lbl) for lbl in labels_raw]
+        type_map = {
+            lt.get("id"): lt for lt in label_types if isinstance(lt, dict) and "id" in lt
+        }
+
+        parsed_labels: List[ZenbiPlanningLabel] = []
+        for lbl in labels_raw:
+            if not isinstance(lbl, dict):
+                continue
+            lbl_copy = dict(lbl)
+            lt_id = lbl_copy.get("labelTypeId") or lbl_copy.get("label_type_id")
+            if lt_id and lt_id in type_map:
+                type_info = type_map[lt_id]
+                if not lbl_copy.get("color") and type_info.get("color"):
+                    lbl_copy["color"] = type_info["color"]
+                if not lbl_copy.get("description") and type_info.get("title") and type_info.get("title") != lbl_copy.get("title"):
+                    lbl_copy["description"] = type_info["title"]
+            parsed_labels.append(ZenbiPlanningLabel.from_dict(lbl_copy))
+
+        return parsed_labels
 
     async def get_homework(
         self, start_dt: datetime, end_dt: datetime

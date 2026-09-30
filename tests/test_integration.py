@@ -1914,6 +1914,47 @@ async def test_next_weekly_plan_sensor_empty_and_populated(mock_hass, mock_confi
     assert attrs_populated["files"] == [{"name": "Pakkeliste.pdf", "is_image": False}]
 
 
+@pytest.mark.asyncio
+async def test_calendar_planning_entity_consecutive_label_merging(mock_hass, mock_config_entry, mock_client):
+    """Test that consecutive daily planning labels with identical titles are merged into clean multi-day CalendarEvents."""
+    coordinator = ZenbiCalendarDataUpdateCoordinator(mock_hass, mock_client, mock_config_entry)
+
+    # 5 daily labels matching Autumn break (Mon-Wed Fritter, Thu-Fri Ferien)
+    labels = [
+        ZenbiPlanningLabel(id="l1", title="Efterårsferie - Fritter åben", start_date="2026-10-12T10:00:00", description="Ferie"),
+        ZenbiPlanningLabel(id="l2", title="Efterårsferie - Fritter åben", start_date="2026-10-13T10:00:00", description="Ferie"),
+        ZenbiPlanningLabel(id="l3", title="Efterårsferie - Fritter åben", start_date="2026-10-14T10:00:00", description="Ferie"),
+        ZenbiPlanningLabel(id="l4", title="Efterårsferie", start_date="2026-10-15T10:00:00", description="Ferie"),
+        ZenbiPlanningLabel(id="l5", title="Efterårsferie", start_date="2026-10-16T10:00:00", description="Ferie"),
+    ]
+    coordinator.data = ZenbiCalendarData(planning_labels=labels)
+
+    entity = ZenbiPlanningCalendarEntity(coordinator, mock_config_entry)
+
+    # _get_calendar_events merges them into 2 multi-day blocks
+    events = entity._get_calendar_events()
+    assert len(events) == 2
+
+    # Block 1: Mon Oct 12 to Thu Oct 15 (exclusive end date)
+    assert events[0].summary == "Efterårsferie - Fritter åben"
+    assert events[0].start == date(2026, 10, 12)
+    assert events[0].end == date(2026, 10, 15)
+    assert events[0].description == "Ferie"
+
+    # Block 2: Thu Oct 15 to Sat Oct 17 (exclusive end date)
+    assert events[1].summary == "Efterårsferie"
+    assert events[1].start == date(2026, 10, 15)
+    assert events[1].end == date(2026, 10, 17)
+    assert events[1].description == "Ferie"
+
+    # async_get_events within window returns both
+    query_start = datetime(2026, 10, 1, tzinfo=timezone.utc)
+    query_end = datetime(2026, 10, 31, tzinfo=timezone.utc)
+    fetched = await entity.async_get_events(mock_hass, query_start, query_end)
+    assert len(fetched) == 2
+
+
+
 
 
 

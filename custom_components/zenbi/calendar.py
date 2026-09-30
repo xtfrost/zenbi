@@ -473,30 +473,6 @@ class ZenbiPlanningCalendarEntity(ZenbiBaseCalendarEntity):
         """Initialize Zenbi planning calendar."""
         super().__init__(coordinator, entry, key="planning", student_name=None)
 
-    @property
-    def event(self) -> Optional[CalendarEvent]:
-        """Return the next or current upcoming all-day event."""
-        if not self.coordinator.data or not self.coordinator.data.planning_labels:
-            return None
-
-        today = dt_util.now().date()
-        upcoming: List[CalendarEvent] = []
-
-        for label in self.coordinator.data.planning_labels:
-            event = self._label_to_calendar_event(label)
-            if event:
-                end_date = event.end if isinstance(event.end, date) else event.end.date()
-                if end_date >= today:
-                    upcoming.append(event)
-
-        if not upcoming:
-            return None
-
-        upcoming.sort(
-            key=lambda e: e.start if isinstance(e.start, date) else e.start.date()
-        )
-        return upcoming[0]
-
     def _label_to_calendar_event(self, label: Any) -> Optional[CalendarEvent]:
         """Convert a ZenbiPlanningLabel into an all-day CalendarEvent."""
         try:
@@ -540,6 +516,69 @@ class ZenbiPlanningCalendarEntity(ZenbiBaseCalendarEntity):
             _LOGGER.warning("Error parsing planning label %s: %s", getattr(label, "id", "unknown"), err)
             return None
 
+    def _get_calendar_events(self) -> List[CalendarEvent]:
+        """Convert and merge consecutive identical planning labels into CalendarEvents."""
+        if not self.coordinator.data or not self.coordinator.data.planning_labels:
+            return []
+
+        parsed: List[CalendarEvent] = []
+        for label in self.coordinator.data.planning_labels:
+            ev = self._label_to_calendar_event(label)
+            if ev:
+                parsed.append(ev)
+
+        if not parsed:
+            return []
+
+        # Sort by start, then end
+        parsed.sort(key=lambda x: (x.start, x.end))
+
+        # Merge consecutive events with identical title and description
+        merged: List[CalendarEvent] = []
+        for ev in parsed:
+            if (
+                merged
+                and merged[-1].summary == ev.summary
+                and merged[-1].description == ev.description
+                and merged[-1].end == ev.start
+            ):
+                # Extend existing multi-day event
+                prev = merged[-1]
+                merged[-1] = CalendarEvent(
+                    start=prev.start,
+                    end=ev.end,
+                    summary=prev.summary,
+                    description=prev.description,
+                    uid=prev.uid,
+                )
+            else:
+                merged.append(ev)
+
+        return merged
+
+    @property
+    def event(self) -> Optional[CalendarEvent]:
+        """Return the next or current upcoming all-day event."""
+        events = self._get_calendar_events()
+        if not events:
+            return None
+
+        today = dt_util.now().date()
+        upcoming: List[CalendarEvent] = []
+
+        for ev in events:
+            end_date = ev.end if isinstance(ev.end, date) else ev.end.date()
+            if end_date >= today:
+                upcoming.append(ev)
+
+        if not upcoming:
+            return None
+
+        upcoming.sort(
+            key=lambda e: e.start if isinstance(e.start, date) else e.start.date()
+        )
+        return upcoming[0]
+
     async def async_get_events(
         self,
         hass: HomeAssistant,
@@ -547,22 +586,21 @@ class ZenbiPlanningCalendarEntity(ZenbiBaseCalendarEntity):
         end_date: datetime,
     ) -> List[CalendarEvent]:
         """Return all planning events intersecting the given range."""
-        if not self.coordinator.data or not self.coordinator.data.planning_labels:
+        events = self._get_calendar_events()
+        if not events:
             return []
 
         start_d = start_date.date()
         end_d = end_date.date()
-        events: List[CalendarEvent] = []
+        matching: List[CalendarEvent] = []
 
-        for label in self.coordinator.data.planning_labels:
-            event = self._label_to_calendar_event(label)
-            if event:
-                ev_start = event.start if isinstance(event.start, date) else event.start.date()
-                ev_end = event.end if isinstance(event.end, date) else event.end.date()
-                if ev_end >= start_d and ev_start <= end_d:
-                    events.append(event)
+        for ev in events:
+            ev_start = ev.start if isinstance(ev.start, date) else ev.start.date()
+            ev_end = ev.end if isinstance(ev.end, date) else ev.end.date()
+            if ev_end >= start_d and ev_start <= end_d:
+                matching.append(ev)
 
-        return events
+        return matching
 
 
 class ZenbiWeeklyMessagesCalendarEntity(ZenbiBaseCalendarEntity):
