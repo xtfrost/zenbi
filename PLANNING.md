@@ -500,40 +500,40 @@ flowchart TD
 
 ---
 
-### Phase 19: Code Quality, Robustness & CI Hardening (Planning / Approved)
+### Phase 19: Code Quality, Robustness & CI Hardening (Completed)
 
 **Scope trigger:** Modifies 9+ source files, coordinator/API logic, entity patterns, GitHub workflows, and tests.
-**Status:** In Progress — executing Ticket 19-A first.
+**Status:** Completed — 77/77 tests passing.
 
 #### 1. Objective
-Address 24 issues identified across the codebase:
+Addressed 24 issues identified across the codebase:
 - Critical bug fixes: Missing imports (`timezone` in `calendar.py`, `Tuple` in `client.py`), insecure HTTP file proxy view, private method calls, and unguarded on-demand coordinator API calls.
 - Robustness & HA patterns: Concurrency lock for auth refresh, singleton timezone object, `async_shutdown` cleanup, modern config flow types, atomic store persistence, deduplicated date parsing, stable label IDs, and sensor measurement state classes.
 - CI/CD & Hygiene: Ruff lint workflow, release workflow, pip caching & coverage in tests, action pinning, PII redaction in diagnostics, and expanded test coverage.
 
-#### 2. Work Breakdown & Tickets
-- **Ticket 19-A: Critical Bug Fixes (Ship First)**
-  - 19-A-1: `calendar.py` — Add missing `timezone` import (`timezone.utc`).
-  - 19-A-2: `api/client.py` — Add missing `Tuple` import from `typing`.
-  - 19-A-3: `http.py` — Require auth (`requires_auth = True`) on file download proxy view.
-  - 19-A-4: `http.py` / `api/client.py` — Expose public `session` property on `ZenbiApiClient` instead of accessing `_get_session()`.
-  - 19-A-5: `coordinator.py` — Wrap on-demand `async_get_calendar_items` fetch in try/except to prevent calendar UI crashes.
-- **Ticket 19-B: Robustness & HA Best Practices**
-  - 19-B-1: `api/client.py` — Add `asyncio.Lock` around token refresh in `authenticate()` to prevent race conditions.
-  - 19-B-2: `api/client.py` — Hoist `_COPENHAGEN_TZ` to module constant and simplify `get_copenhagen_tz()`.
-  - 19-B-3: `coordinator.py` — Remove fragile `hasattr` check on `super().async_shutdown()`.
-  - 19-B-4: `config_flow.py` — Replace deprecated `FlowResult` with `ConfigFlowResult` / backward-compatible type.
-  - 19-B-5: `config_flow.py` — Clean up `async_step_reauth` context handling and add docstrings.
-  - 19-B-6: `todo.py` — Protect store read-modify-write with an `asyncio.Lock` to avoid multi-student race conditions.
-  - 19-B-7: `api/models.py` — Deduplicate `_parse_iso` helper function into module-level helper.
-  - 19-B-8: `api/models.py` — Replace non-deterministic `hash()` fallback ID with stable `uuid.uuid5` for planning labels.
-  - 19-B-9: `sensor.py` — Add `SensorStateClass.MEASUREMENT` and unit to weekly plan sensors.
-- **Ticket 19-C: CI/CD & Low-Priority Polish**
-  - 19-C-1: Create `.github/workflows/lint.yaml` with Ruff lint and format checks.
-  - 19-C-2: Create `.github/workflows/release.yaml` for automated HACS GitHub releases on tag push.
-  - 19-C-3: Update `.github/workflows/tests.yaml` with pip caching and coverage report.
-  - 19-C-4: Pin action versions in `hacs.yaml` and `hassfest.yaml`.
-  - 19-C-5: `diagnostics.py` — Redact `CONF_USERNAME` as PII.
-  - 19-C-6: Incrementally modernize type annotations.
-  - 19-C-7: Add new test scenarios covering all fixes in `tests/test_api_client.py` and `tests/test_integration.py`.
+#### 2. Work Breakdown & Tickets Completed
+- [x] **Ticket 19-A: Critical Bug Fixes**
+  - 19-A-1: `calendar.py` — Added missing `timezone` import (`timezone.utc`).
+  - 19-A-2: `api/client.py` — Added missing `Tuple` import from `typing`.
+  - 19-A-3: `http.py` — Required auth (`requires_auth = True`) on file download proxy view.
+  - 19-A-4: `http.py` / `api/client.py` — Exposed public `session` property on `ZenbiApiClient`.
+  - 19-A-5: `coordinator.py` — Wrapped on-demand `async_get_calendar_items` and `async_get_weekly_schedules` in error handlers to prevent UI crashes.
+- [x] **Ticket 19-B: Robustness & HA Best Practices**
+  - 19-B-1: `api/client.py` — Added `asyncio.Lock` around token refresh in `authenticate()` to prevent race conditions.
+  - 19-B-2: `api/client.py` — Hoisted `_COPENHAGEN_TZ` to module constant and simplified `get_copenhagen_tz()`.
+  - 19-B-3: `coordinator.py` — Simplified `async_shutdown` cleanup.
+  - 19-B-4: `config_flow.py` — Replaced deprecated `FlowResult` with `ConfigFlowResult`.
+  - 19-B-5: `config_flow.py` — Cleaned up `async_step_reauth` context handling and added docstrings.
+  - 19-B-6: `todo.py` — Protected store read-modify-write with `_store_lock`.
+  - 19-B-7: `api/models.py` — Deduplicated `_parse_iso` helper function into module-level helper.
+  - 19-B-8: `api/models.py` — Replaced non-deterministic `hash()` fallback ID with stable `uuid.uuid5` for planning labels.
+  - 19-B-9: `sensor.py` — Added `SensorStateClass.MEASUREMENT` and unit to weekly plan sensors.
+- [x] **Ticket 19-C: CI/CD & Low-Priority Polish**
+  - 19-C-1: Created `.github/workflows/lint.yaml` with Ruff lint and format checks.
+  - 19-C-2: Created `.github/workflows/release.yaml` for automated HACS GitHub releases on tag push.
+  - 19-C-3: Updated `.github/workflows/tests.yaml` with pip caching and coverage report.
+  - 19-C-4: Pinned action versions in `hacs.yaml`.
+  - 19-C-5: `diagnostics.py` — Redacted `CONF_USERNAME` as PII.
+  - 19-C-6: Added tests covering all new behaviors in `tests/test_api_client.py` and `tests/test_integration.py` (77 passing).
+
 
