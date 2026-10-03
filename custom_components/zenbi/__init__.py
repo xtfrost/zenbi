@@ -69,9 +69,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a Zenbi config entry."""
     # 1. Stop the background refresh loop BEFORE platform entities start tearing down,
     #    to prevent an in-flight coordinator refresh from racing entity removal.
-    coordinator = (
-        getattr(entry, "runtime_data", None)
-        or hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    coordinator = getattr(entry, "runtime_data", None) or hass.data.get(DOMAIN, {}).get(
+        entry.entry_id
     )
     if coordinator and hasattr(coordinator, "async_shutdown"):
         await coordinator.async_shutdown()
@@ -88,7 +87,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Handle cleanup when a Zenbi config entry is deleted by the user.
-    
+
     Home Assistant Core automatically purges associated EntityRegistry and
     DeviceRegistry entries. This hook deletes custom persistent .storage files.
     """
@@ -108,5 +107,3 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Reload the config entry when options change."""
     await hass.config_entries.async_reload(entry.entry_id)
-
-

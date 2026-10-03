@@ -43,14 +43,10 @@ async def async_setup_entry(
 
     if students:
         for student in students:
-            entities.append(
-                ZenbiHomeworkTodoListEntity(coordinator, entry, student_name=student)
-            )
+            entities.append(ZenbiHomeworkTodoListEntity(coordinator, entry, student_name=student))
     else:
         # Fallback if no students discovered
-        entities.append(
-            ZenbiHomeworkTodoListEntity(coordinator, entry, student_name=None)
-        )
+        entities.append(ZenbiHomeworkTodoListEntity(coordinator, entry, student_name=None))
 
     async_add_entities(entities)
 
@@ -283,7 +279,11 @@ class ZenbiHomeworkTodoListEntity(
                     )
                 )
             except Exception as err:
-                _LOGGER.warning("Error parsing homework item %s: %s", getattr(hw, "id", "unknown"), err)
+                _LOGGER.warning(
+                    "Error parsing homework item %s: %s",
+                    getattr(hw, "id", "unknown"),
+                    err,
+                )
 
         return items
 

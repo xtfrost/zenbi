@@ -44,4 +44,3 @@ STORAGE_KEY_TODO = f"{DOMAIN}.{{entry_id}}"
 def slugify_name(name: str) -> str:
     """Create a clean, lowercased slug from a name for unique IDs and identifiers."""
     return "".join(c if c.isalnum() else "_" for c in name.lower()).strip("_")
-

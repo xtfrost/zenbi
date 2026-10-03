@@ -53,10 +53,9 @@ class ZenbiConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             username = user_input[CONF_USERNAME].strip()
             password = user_input[CONF_PASSWORD]
-            unique_device_id = (
-                user_input.get(CONF_UNIQUE_DEVICE_ID, "").strip()
-                or generate_stable_device_id(username)
-            )
+            unique_device_id = user_input.get(
+                CONF_UNIQUE_DEVICE_ID, ""
+            ).strip() or generate_stable_device_id(username)
 
             session = async_get_clientsession(self.hass)
             client = ZenbiApiClient(
@@ -98,9 +97,7 @@ class ZenbiConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_reauth(
-        self, entry_data: Mapping[str, Any]
-    ) -> ConfigFlowResult:
+    async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> ConfigFlowResult:
         """Handle re-authentication trigger from ConfigEntryAuthFailed."""
         if not self._reauth_entry:
             context = getattr(self, "context", {}) or {}
@@ -120,9 +117,7 @@ class ZenbiConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else self.context.get("title", "")
         )
         unique_device_id = (
-            self._reauth_entry.data.get(CONF_UNIQUE_DEVICE_ID)
-            if self._reauth_entry
-            else None
+            self._reauth_entry.data.get(CONF_UNIQUE_DEVICE_ID) if self._reauth_entry else None
         )
 
         if user_input is not None:
@@ -153,9 +148,7 @@ class ZenbiConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             CONF_PASSWORD: password,
                         },
                     )
-                    await self.hass.config_entries.async_reload(
-                        self._reauth_entry.entry_id
-                    )
+                    await self.hass.config_entries.async_reload(self._reauth_entry.entry_id)
                     return self.async_abort(reason="reauth_successful")
 
                 return self.async_abort(reason="reauth_successful")

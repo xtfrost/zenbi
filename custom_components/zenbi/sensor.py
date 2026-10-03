@@ -48,7 +48,9 @@ def is_image_file(file_info: Any = None, filename: Optional[str] = None) -> bool
                 return True
 
     # 4. Check explicit filename or string argument
-    target_name = filename if filename is not None else (file_info if isinstance(file_info, str) else None)
+    target_name = (
+        filename if filename is not None else (file_info if isinstance(file_info, str) else None)
+    )
     if target_name and isinstance(target_name, str):
         clean_name = target_name.lower().split("?")[0].strip()
         if any(clean_name.endswith(f".{e}") for e in IMAGE_EXTENSIONS):
@@ -60,9 +62,7 @@ def is_image_file(file_info: Any = None, filename: Optional[str] = None) -> bool
 is_image_filename = is_image_file
 
 
-def format_attachment_display_name(
-    file_info: Any, is_image: Optional[bool] = None
-) -> str:
+def format_attachment_display_name(file_info: Any, is_image: Optional[bool] = None) -> str:
     """Format file display name, appending the file extension for non-image files if missing."""
     if not isinstance(file_info, dict):
         return str(file_info or "Vedhæftet fil")
@@ -99,19 +99,11 @@ async def async_setup_entry(
 
     if students:
         for student in students:
-            entities.append(
-                ZenbiWeeklyPlanSensor(coordinator, entry, student_name=student)
-            )
-            entities.append(
-                ZenbiNextWeeklyPlanSensor(coordinator, entry, student_name=student)
-            )
+            entities.append(ZenbiWeeklyPlanSensor(coordinator, entry, student_name=student))
+            entities.append(ZenbiNextWeeklyPlanSensor(coordinator, entry, student_name=student))
     else:
-        entities.append(
-            ZenbiWeeklyPlanSensor(coordinator, entry, student_name=None)
-        )
-        entities.append(
-            ZenbiNextWeeklyPlanSensor(coordinator, entry, student_name=None)
-        )
+        entities.append(ZenbiWeeklyPlanSensor(coordinator, entry, student_name=None))
+        entities.append(ZenbiNextWeeklyPlanSensor(coordinator, entry, student_name=None))
 
     # Diagnostic sync status timestamp sensor on the primary school/integration device
     entities.append(ZenbiLastSyncedSensor(coordinator, entry))
@@ -119,9 +111,7 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class ZenbiLastSyncedSensor(
-    CoordinatorEntity[ZenbiCalendarDataUpdateCoordinator], SensorEntity
-):
+class ZenbiLastSyncedSensor(CoordinatorEntity[ZenbiCalendarDataUpdateCoordinator], SensorEntity):
     """Diagnostic sensor exposing the timestamp of the last successful synchronization with Zenbi."""
 
     _attr_has_entity_name = True
@@ -242,7 +232,9 @@ class ZenbiWeeklyPlanBaseSensor(
         return self._cached_device_info
 
     @staticmethod
-    def _get_dates(schedule: ZenbiWeeklySchedule) -> tuple[Optional[date], Optional[date]]:
+    def _get_dates(
+        schedule: ZenbiWeeklySchedule,
+    ) -> tuple[Optional[date], Optional[date]]:
         """Extract start and end date from a weekly schedule."""
         start_d: Optional[date] = None
         end_d: Optional[date] = None
@@ -256,7 +248,11 @@ class ZenbiWeeklyPlanBaseSensor(
         if schedule.end_dt:
             # If end time is midnight (00:00:00), the week ended as this day began (exclusive boundary).
             # Subtract 1 second so the effective inclusive end date is Sunday, not Monday.
-            if schedule.end_dt.hour == 0 and schedule.end_dt.minute == 0 and schedule.end_dt.second == 0:
+            if (
+                schedule.end_dt.hour == 0
+                and schedule.end_dt.minute == 0
+                and schedule.end_dt.second == 0
+            ):
                 end_d = (schedule.end_dt - timedelta(seconds=1)).date()
             else:
                 end_d = schedule.end_dt.date()
@@ -374,7 +370,7 @@ class ZenbiWeeklyPlanBaseSensor(
                     img_html = (
                         f'<a href="{url}" target="_blank" title="{display_name}">'
                         f'<img src="{url}" alt="{display_name}" style="max-width: 100%; border-radius: 8px; margin-top: 8px;" />'
-                        f'</a>'
+                        f"</a>"
                     )
                     images.append(img_html)
                 elif url:

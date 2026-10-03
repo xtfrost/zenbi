@@ -137,6 +137,7 @@ class HomeAssistantView:
 class MockHomeAssistant:
     def __init__(self):
         from unittest.mock import AsyncMock
+
         self.data: Dict[str, Any] = {}
         self.http = MockHttp()
         self.config_entries = MagicMock()
@@ -331,7 +332,6 @@ class DeviceEntryType(str, enum.Enum):
     SERVICE = "service"
 
 
-
 @dataclass
 class DeviceInfo:
     identifiers: Any = None
@@ -399,7 +399,6 @@ class MockStore:
         MockStore._storage_data.pop(self.key, None)
 
 
-
 class MockDtUtil:
     @staticmethod
     def now(tz: Any = None) -> datetime:
@@ -456,7 +455,11 @@ def register_mock_modules():
     # homeassistant.data_entry_flow
     data_entry_flow = types.ModuleType("homeassistant.data_entry_flow")
     data_entry_flow.FlowResult = dict
-    data_entry_flow.FlowResultType = type("FlowResultType", (), {"FORM": "form", "CREATE_ENTRY": "create_entry", "ABORT": "abort"})
+    data_entry_flow.FlowResultType = type(
+        "FlowResultType",
+        (),
+        {"FORM": "form", "CREATE_ENTRY": "create_entry", "ABORT": "abort"},
+    )
     ha.data_entry_flow = data_entry_flow
 
     # homeassistant.components
@@ -478,7 +481,9 @@ def register_mock_modules():
     # homeassistant.const
     const = types.ModuleType("homeassistant.const")
     const.EntityCategory = EntityCategory
-    const.Platform = enum.Enum("Platform", {"CALENDAR": "calendar", "TODO": "todo", "SENSOR": "sensor"})
+    const.Platform = enum.Enum(
+        "Platform", {"CALENDAR": "calendar", "TODO": "todo", "SENSOR": "sensor"}
+    )
     ha.const = const
 
     # homeassistant.components.sensor
@@ -561,4 +566,3 @@ def register_mock_modules():
 
 
 register_mock_modules()
-

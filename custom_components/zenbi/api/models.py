@@ -261,7 +261,7 @@ class ZenbiCalendarItem:
     id: str
     title: str
     start: str  # ISO 8601 timestamp string
-    end: str    # ISO 8601 timestamp string
+    end: str  # ISO 8601 timestamp string
     description: str = ""
     note: str = ""
     only_date: bool = False
@@ -408,8 +408,13 @@ class ZenbiGlobalData:
         )
 
         # Fallback: search 'timeframes' list by matching current date and filtering out trash like 'slettes'
-        if not timeframe_id and isinstance(data.get("timeframes"), list) and len(data["timeframes"]) > 0:
+        if (
+            not timeframe_id
+            and isinstance(data.get("timeframes"), list)
+            and len(data["timeframes"]) > 0
+        ):
             from datetime import timezone
+
             ref_dt = target_date or datetime.now(timezone.utc)
             if ref_dt.tzinfo is None:
                 ref_dt = ref_dt.replace(tzinfo=timezone.utc)

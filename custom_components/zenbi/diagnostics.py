@@ -15,7 +15,13 @@ from .const import (
 )
 from .coordinator import ZenbiCalendarDataUpdateCoordinator
 
-TO_REDACT = {CONF_USERNAME, CONF_PASSWORD, CONF_UNIQUE_DEVICE_ID, "token", "refreshToken"}
+TO_REDACT = {
+    CONF_USERNAME,
+    CONF_PASSWORD,
+    CONF_UNIQUE_DEVICE_ID,
+    "token",
+    "refreshToken",
+}
 
 
 def _redact_data(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -93,4 +99,3 @@ async def async_get_config_entry_diagnostics(
     }
 
     return diag_data
-

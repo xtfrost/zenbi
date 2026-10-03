@@ -104,7 +104,9 @@ class ZenbiApiClient:
         self._owns_session = session is None
 
         self._token: Optional[str] = token
-        self._token_expiry: Optional[float] = token_expiry or (_decode_jwt_exp(token) if token else None)
+        self._token_expiry: Optional[float] = token_expiry or (
+            _decode_jwt_exp(token) if token else None
+        )
         self._timeframe_id: Optional[str] = None
         self._user_id: Optional[str] = None
         self._sas_url_cache: Dict[str, Tuple[str, float]] = {}
@@ -140,8 +142,7 @@ class ZenbiApiClient:
         if self._session is None or self._session.closed:
             if not self._owns_session:
                 _LOGGER.warning(
-                    "Shared aiohttp session was closed unexpectedly. "
-                    "Creating a new owned session."
+                    "Shared aiohttp session was closed unexpectedly. Creating a new owned session."
                 )
             self._session = aiohttp.ClientSession()
             self._owns_session = True
@@ -181,13 +182,25 @@ class ZenbiApiClient:
                 async with session.post(url, json=payload, headers=headers) as response:
                     if response.status in (401, 403):
                         error_text = await response.text()
-                        _LOGGER.warning("Authentication failed (HTTP %s): %s", response.status, error_text)
-                        raise ZenbiAuthError(f"Invalid credentials or access denied: HTTP {response.status}")
+                        _LOGGER.warning(
+                            "Authentication failed (HTTP %s): %s",
+                            response.status,
+                            error_text,
+                        )
+                        raise ZenbiAuthError(
+                            f"Invalid credentials or access denied: HTTP {response.status}"
+                        )
 
                     if response.status != 200:
                         error_text = await response.text()
-                        _LOGGER.error("Auth request failed (HTTP %s): %s", response.status, error_text)
-                        raise ZenbiApiError(f"Authentication failed with status {response.status}: {error_text}")
+                        _LOGGER.error(
+                            "Auth request failed (HTTP %s): %s",
+                            response.status,
+                            error_text,
+                        )
+                        raise ZenbiApiError(
+                            f"Authentication failed with status {response.status}: {error_text}"
+                        )
 
                     data = await response.json()
             except aiohttp.ClientError as err:
@@ -258,7 +271,9 @@ class ZenbiApiClient:
 
                 if response.status not in (200, 201, 204):
                     text = await response.text()
-                    raise ZenbiApiError(f"API request to {endpoint} returned status {response.status}: {text}")
+                    raise ZenbiApiError(
+                        f"API request to {endpoint} returned status {response.status}: {text}"
+                    )
 
                 if response.status == 204:
                     return None
@@ -332,9 +347,7 @@ class ZenbiApiClient:
                     labels_raw = data[key]
                     break
 
-        type_map = {
-            lt.get("id"): lt for lt in label_types if isinstance(lt, dict) and "id" in lt
-        }
+        type_map = {lt.get("id"): lt for lt in label_types if isinstance(lt, dict) and "id" in lt}
 
         parsed_labels: List[ZenbiPlanningLabel] = []
         for lbl in labels_raw:
@@ -346,15 +359,17 @@ class ZenbiApiClient:
                 type_info = type_map[lt_id]
                 if not lbl_copy.get("color") and type_info.get("color"):
                     lbl_copy["color"] = type_info["color"]
-                if not lbl_copy.get("description") and type_info.get("title") and type_info.get("title") != lbl_copy.get("title"):
+                if (
+                    not lbl_copy.get("description")
+                    and type_info.get("title")
+                    and type_info.get("title") != lbl_copy.get("title")
+                ):
                     lbl_copy["description"] = type_info["title"]
             parsed_labels.append(ZenbiPlanningLabel.from_dict(lbl_copy))
 
         return parsed_labels
 
-    async def get_homework(
-        self, start_dt: datetime, end_dt: datetime
-    ) -> List[ZenbiHomework]:
+    async def get_homework(self, start_dt: datetime, end_dt: datetime) -> List[ZenbiHomework]:
         """Fetch homework items for a given date range."""
         params = {
             "start": format_zenbi_datetime(start_dt),
@@ -429,4 +444,3 @@ class ZenbiApiClient:
         self._sas_url_cache.clear()
         if self._owns_session and self._session and not self._session.closed:
             await self._session.close()
-
