@@ -1,6 +1,7 @@
 # Zenbi Home Assistant Integration
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/default)
+[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=xtfrost&repository=zenbi&category=integration)
+[![Open in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=xtfrost&repository=zenbi&category=integration)
 [![GitHub release](https://img.shields.io/github/v/release/xtfrost/zenbi?include_prereleases&style=flat-square)](https://github.com/xtfrost/zenbi/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -36,20 +37,21 @@ This integration brings school schedules, homework tasks, weekly letters ("ugebr
 
 ## Installation
 
-### Method 1: Manual Installation
+### Method 1: HACS (Recommended 1-Click)
+
+Click the button below to open your Home Assistant instance and automatically add the repository:
+
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=xtfrost&repository=zenbi&category=integration)
+
+*(Or manually add `https://github.com/xtfrost/zenbi` under **HACS** > **Integrations** > Three dots menu > **Custom repositories** > Category: **Integration**).*
+
+### Method 2: Manual Installation
 1. Download the latest release (or clone this repository).
 2. Copy the `custom_components/zenbi` folder into your Home Assistant directory under:
    ```text
    <config_dir>/custom_components/zenbi/
    ```
 3. Restart Home Assistant.
-
-### Method 2: HACS (Custom Repository)
-1. In Home Assistant, open **HACS** > **Integrations**.
-2. Click the top-right three dots menu and choose **Custom repositories**.
-3. Add the repository URL, select category **Integration**, and click **Add**.
-4. Search for **Zenbi** and click **Download**.
-5. Restart Home Assistant.
 
 ---
 
