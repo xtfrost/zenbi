@@ -7,10 +7,15 @@ from typing import Any, Dict
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_PASSWORD, CONF_UNIQUE_DEVICE_ID, DOMAIN
+from .const import (
+    CONF_PASSWORD,
+    CONF_UNIQUE_DEVICE_ID,
+    CONF_USERNAME,
+    DOMAIN,
+)
 from .coordinator import ZenbiCalendarDataUpdateCoordinator
 
-TO_REDACT = {CONF_PASSWORD, CONF_UNIQUE_DEVICE_ID, "token", "refreshToken"}
+TO_REDACT = {CONF_USERNAME, CONF_PASSWORD, CONF_UNIQUE_DEVICE_ID, "token", "refreshToken"}
 
 
 def _redact_data(data: Dict[str, Any]) -> Dict[str, Any]:

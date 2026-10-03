@@ -556,6 +556,7 @@ async def test_diagnostics(mock_hass, mock_config_entry, mock_client):
 
     diag = await async_get_config_entry_diagnostics(mock_hass, mock_config_entry)
     assert diag["entry"]["title"] == "student@school.dk"
+    assert diag["entry"]["data"][CONF_USERNAME] == "**REDACTED**"
     assert diag["entry"]["data"][CONF_PASSWORD] == "**REDACTED**"
     assert diag["entry"]["data"][CONF_UNIQUE_DEVICE_ID] == "**REDACTED**"
     assert diag["coordinator"]["calendar_items_count"] == 1
