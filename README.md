@@ -1,7 +1,6 @@
 # Zenbi Home Assistant Integration
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=xtfrost&repository=zenbi&category=integration)
-[![Open in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=xtfrost&repository=zenbi&category=integration)
 [![GitHub release](https://img.shields.io/github/v/release/xtfrost/zenbi?include_prereleases&style=flat-square)](https://github.com/xtfrost/zenbi/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
