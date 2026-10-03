@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 from datetime import datetime, timezone
 import json
@@ -727,6 +728,54 @@ def test_client_init_and_session_property():
     client = ZenbiApiClient(username="testuser", password="secretpassword", session=mock_session)
     assert client.username == "testuser"
     assert client.session is mock_session
+
+
+@pytest.mark.asyncio
+async def test_client_authenticate_concurrency_lock():
+    """Test concurrent authenticate calls are serialized and make a single upstream call."""
+    mock_session = MagicMock(spec=aiohttp.ClientSession)
+    mock_session.closed = False
+
+    future_exp = int(time.time()) + 3600
+    mock_token = _create_mock_jwt(future_exp)
+
+    mock_resp = AsyncMock()
+    mock_resp.status = 200
+    mock_resp.json = AsyncMock(return_value={"userId": "u1", "token": mock_token})
+
+    async def delayed_post(*args, **kwargs):
+        await asyncio.sleep(0.01)
+        return mock_resp
+
+    mock_session.post.return_value.__aenter__.side_effect = delayed_post
+
+    client = ZenbiApiClient(username="user", password="pwd", session=mock_session)
+
+    res1, res2 = await asyncio.gather(
+        client.authenticate(),
+        client.authenticate(),
+    )
+    assert res1.token == mock_token
+    assert res2.token == mock_token
+    # Upstream HTTP post should only have been called once thanks to lock and is_token_expired check
+    assert mock_session.post.call_count == 1
+
+
+def test_planning_label_stable_uuid5_id():
+    """Test ZenbiPlanningLabel generates deterministic UUID5 without id or guid."""
+    payload1 = {
+        "title": "Idrætsdag",
+        "date": "2026-09-18",
+    }
+    payload2 = {
+        "title": "Idrætsdag",
+        "date": "2026-09-18",
+    }
+    lbl1 = ZenbiPlanningLabel.from_dict(payload1)
+    lbl2 = ZenbiPlanningLabel.from_dict(payload2)
+    assert lbl1.id == lbl2.id
+    assert lbl1.id.count("-") == 4  # Valid UUID format string
+
 
 
 

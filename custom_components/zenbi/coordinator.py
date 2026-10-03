@@ -100,7 +100,7 @@ class ZenbiCalendarDataUpdateCoordinator(DataUpdateCoordinator[ZenbiCalendarData
         """Cancel background update tasks and shut down coordinator."""
         _LOGGER.debug("Shutting down Zenbi coordinator for %s", self.name)
         self._on_demand_cache.clear()
-        if hasattr(super(), "async_shutdown"):
+        if hasattr(DataUpdateCoordinator, "async_shutdown"):
             await super().async_shutdown()
 
     async def _async_update_data(self) -> ZenbiCalendarData:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import date, datetime
 import logging
 from typing import Any, Dict, List, Optional, Set
@@ -99,6 +100,7 @@ class ZenbiHomeworkTodoListEntity(
                 STORAGE_VERSION,
                 STORAGE_KEY_TODO.format(entry_id=entry.entry_id),
             )
+        self._store_lock = asyncio.Lock()
         self._cached_device_info: DeviceInfo = self._build_device_info()
 
     # ------------------------------------------------------------------
@@ -301,22 +303,23 @@ class ZenbiHomeworkTodoListEntity(
 
         if self._store:
             try:
-                if self._storage_student_key == "__default__":
-                    # Single-student or default entity: write as flat list for backward compatibility
-                    await self._store.async_save({"completed_ids": list(self._completed_ids)})
-                else:
-                    # Multi-student dictionary format
-                    data = await self._store.async_load() or {}
-                    raw_completed = data.get("completed_ids")
-                    completed_dict: Dict[str, List[str]] = {}
+                async with self._store_lock:
+                    if self._storage_student_key == "__default__":
+                        # Single-student or default entity: write as flat list for backward compatibility
+                        await self._store.async_save({"completed_ids": list(self._completed_ids)})
+                    else:
+                        # Multi-student dictionary format
+                        data = await self._store.async_load() or {}
+                        raw_completed = data.get("completed_ids")
+                        completed_dict: Dict[str, List[str]] = {}
 
-                    if isinstance(raw_completed, dict):
-                        completed_dict = dict(raw_completed)
-                    elif isinstance(raw_completed, list):
-                        completed_dict["__default__"] = list(raw_completed)
+                        if isinstance(raw_completed, dict):
+                            completed_dict = dict(raw_completed)
+                        elif isinstance(raw_completed, list):
+                            completed_dict["__default__"] = list(raw_completed)
 
-                    completed_dict[self._storage_student_key] = list(self._completed_ids)
-                    await self._store.async_save({"completed_ids": completed_dict})
+                        completed_dict[self._storage_student_key] = list(self._completed_ids)
+                        await self._store.async_save({"completed_ids": completed_dict})
             except Exception as err:
                 _LOGGER.warning(
                     "Error saving persistent Zenbi homework state for %s: %s",

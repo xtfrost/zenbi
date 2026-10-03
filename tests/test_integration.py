@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import date, datetime, time, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -45,7 +46,7 @@ from custom_components.zenbi.sensor import (
     async_setup_entry as async_setup_sensor_entry,
 )
 from custom_components.zenbi.http import ZenbiFileDownloadView
-from homeassistant.components.sensor import SensorDeviceClass
+from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.components.todo import TodoItem, TodoItemStatus
 from homeassistant.const import EntityCategory
 from homeassistant.helpers.selector import NumberSelector, NumberSelectorMode
@@ -1990,6 +1991,39 @@ async def test_coordinator_on_demand_weekly_schedules_error_handling(mock_hass, 
 
     items = await coordinator.async_get_weekly_schedules(out_start, out_end)
     assert items == []
+
+
+@pytest.mark.asyncio
+async def test_concurrent_todo_item_updates(mock_hass, mock_config_entry, mock_client):
+    """Test concurrent async_update_todo_item calls are protected by _store_lock and serialize saves."""
+    coordinator = ZenbiCalendarDataUpdateCoordinator(mock_hass, mock_client, mock_config_entry)
+    todo1 = ZenbiHomeworkTodoListEntity(coordinator, mock_config_entry, student_name="Student 1")
+    todo2 = ZenbiHomeworkTodoListEntity(coordinator, mock_config_entry, student_name="Student 2")
+
+    # Both share the same store mock
+    item1 = TodoItem(summary="Hw 1", uid="hw-1", status=TodoItemStatus.COMPLETED)
+    item2 = TodoItem(summary="Hw 2", uid="hw-2", status=TodoItemStatus.COMPLETED)
+
+    await asyncio.gather(
+        todo1.async_update_todo_item(item1),
+        todo2.async_update_todo_item(item2),
+    )
+
+    assert "hw-1" in todo1._completed_ids
+    assert "hw-2" in todo2._completed_ids
+
+
+def test_weekly_plan_sensor_state_class(mock_hass, mock_config_entry, mock_client):
+    """Test weekly plan sensors have MEASUREMENT state_class and unit."""
+    coordinator = ZenbiCalendarDataUpdateCoordinator(mock_hass, mock_client, mock_config_entry)
+    sensor_curr = ZenbiWeeklyPlanSensor(coordinator, mock_config_entry, student_name="Albert")
+    sensor_next = ZenbiNextWeeklyPlanSensor(coordinator, mock_config_entry, student_name="Albert")
+
+    assert sensor_curr._attr_state_class == SensorStateClass.MEASUREMENT
+    assert sensor_curr._attr_native_unit_of_measurement == "messages"
+    assert sensor_next._attr_state_class == SensorStateClass.MEASUREMENT
+    assert sensor_next._attr_native_unit_of_measurement == "messages"
+
 
 
 

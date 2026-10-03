@@ -6,7 +6,11 @@ from datetime import date, datetime, timedelta
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
@@ -461,6 +465,8 @@ class ZenbiWeeklyPlanSensor(ZenbiWeeklyPlanBaseSensor):
     """Sensor exposing the current active week's plan count and content."""
 
     _attr_translation_key = "weekly_plan"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = "messages"
 
     def __init__(
         self,
@@ -511,6 +517,8 @@ class ZenbiNextWeeklyPlanSensor(ZenbiWeeklyPlanBaseSensor):
     """Sensor exposing next week's plan count and content."""
 
     _attr_translation_key = "next_weekly_plan"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = "messages"
 
     def __init__(
         self,

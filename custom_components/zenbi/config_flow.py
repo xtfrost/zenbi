@@ -8,8 +8,8 @@ from typing import Any, Dict, Mapping, Optional
 import voluptuous as vol
 
 from homeassistant import config_entries
+from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.core import callback
-from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api.client import ZenbiApiClient, generate_stable_device_id
@@ -46,7 +46,7 @@ class ZenbiConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(
         self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Handle the initial setup step."""
         errors: Dict[str, str] = {}
 
@@ -100,20 +100,18 @@ class ZenbiConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_reauth(
         self, entry_data: Mapping[str, Any]
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
+        """Handle re-authentication trigger from ConfigEntryAuthFailed."""
         if not self._reauth_entry:
-            entry_id = (
-                self.context.get("entry_id")
-                if hasattr(self, "context") and self.context
-                else None
-            )
+            context = getattr(self, "context", {}) or {}
+            entry_id = context.get("entry_id")
             if entry_id and hasattr(self.hass, "config_entries"):
                 self._reauth_entry = self.hass.config_entries.async_get_entry(entry_id)
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(
         self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Handle user confirmation and updated password submission for reauth."""
         errors: Dict[str, str] = {}
         username = (

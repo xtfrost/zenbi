@@ -6,6 +6,17 @@ import html
 import json
 import re
 from typing import Any, Dict, List, Optional
+import uuid
+
+
+def _parse_iso(s: Optional[str]) -> Optional[datetime]:
+    """Parse an ISO 8601 datetime string, returning None on failure."""
+    if not s:
+        return None
+    try:
+        return datetime.fromisoformat(str(s))
+    except (ValueError, TypeError):
+        return None
 
 
 def parse_quill_delta(raw_text: str) -> str:
@@ -221,14 +232,6 @@ class ZenbiWeeklySchedule:
         if not title:
             title = "Weekly Message"
 
-        def _parse_iso(s: str) -> Optional[datetime]:
-            if not s:
-                return None
-            try:
-                return datetime.fromisoformat(s)
-            except (ValueError, TypeError):
-                return None
-
         start_str = str(data.get("start", ""))
         end_str = str(data.get("end", ""))
 
@@ -285,14 +288,6 @@ class ZenbiCalendarItem:
 
         start_str = data.get("start", "")
         end_str = data.get("end", "")
-
-        def _parse_iso(s: str) -> Optional[datetime]:
-            if not s:
-                return None
-            try:
-                return datetime.fromisoformat(s)
-            except (ValueError, TypeError):
-                return None
 
         instance = cls(
             id=data.get("id", ""),
@@ -368,8 +363,18 @@ class ZenbiPlanningLabel:
         raw_desc = data.get("description") or data.get("note") or ""
         clean_desc = parse_quill_delta(raw_desc)
 
+        label_id = (
+            str(data["id"])
+            if data.get("id")
+            else (
+                str(data["guid"])
+                if data.get("guid")
+                else str(uuid.uuid5(uuid.NAMESPACE_URL, f"zenbi-label-{title}_{start_date}"))
+            )
+        )
+
         return cls(
-            id=str(data.get("id") or data.get("guid") or hash(f"{title}_{start_date}")),
+            id=label_id,
             title=title,
             start_date=start_date,
             end_date=end_date,

@@ -259,6 +259,12 @@ class SensorDeviceClass(str, enum.Enum):
     TIMESTAMP = "timestamp"
 
 
+class SensorStateClass(str, enum.Enum):
+    MEASUREMENT = "measurement"
+    TOTAL = "total"
+    TOTAL_INCREASING = "total_increasing"
+
+
 class SensorEntity:
     _attr_has_entity_name = False
     _attr_name: Optional[str] = None
@@ -267,6 +273,8 @@ class SensorEntity:
     _attr_native_value: Any = None
     _attr_extra_state_attributes: Dict[str, Any] = {}
     _attr_device_class: Optional[SensorDeviceClass] = None
+    _attr_state_class: Optional[SensorStateClass] = None
+    _attr_native_unit_of_measurement: Optional[str] = None
     _attr_entity_category: Optional[EntityCategory] = None
 
     @property
@@ -442,11 +450,13 @@ def register_mock_modules():
     config_entries.ConfigEntry = MockConfigEntry
     config_entries.ConfigFlow = MockConfigFlow
     config_entries.OptionsFlow = MockOptionsFlow
+    config_entries.ConfigFlowResult = dict
     ha.config_entries = config_entries
 
     # homeassistant.data_entry_flow
     data_entry_flow = types.ModuleType("homeassistant.data_entry_flow")
     data_entry_flow.FlowResult = dict
+    data_entry_flow.FlowResultType = type("FlowResultType", (), {"FORM": "form", "CREATE_ENTRY": "create_entry", "ABORT": "abort"})
     ha.data_entry_flow = data_entry_flow
 
     # homeassistant.components
@@ -475,6 +485,7 @@ def register_mock_modules():
     sensor = types.ModuleType("homeassistant.components.sensor")
     sensor.SensorEntity = SensorEntity
     sensor.SensorDeviceClass = SensorDeviceClass
+    sensor.SensorStateClass = SensorStateClass
     components.sensor = sensor
 
     # homeassistant.components.http
