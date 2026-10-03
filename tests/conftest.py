@@ -137,6 +137,7 @@ class HomeAssistantView:
 class MockHomeAssistant:
     def __init__(self):
         from unittest.mock import AsyncMock
+
         self.data: Dict[str, Any] = {}
         self.http = MockHttp()
         self.config_entries = MagicMock()
@@ -259,6 +260,12 @@ class SensorDeviceClass(str, enum.Enum):
     TIMESTAMP = "timestamp"
 
 
+class SensorStateClass(str, enum.Enum):
+    MEASUREMENT = "measurement"
+    TOTAL = "total"
+    TOTAL_INCREASING = "total_increasing"
+
+
 class SensorEntity:
     _attr_has_entity_name = False
     _attr_name: Optional[str] = None
@@ -267,6 +274,8 @@ class SensorEntity:
     _attr_native_value: Any = None
     _attr_extra_state_attributes: Dict[str, Any] = {}
     _attr_device_class: Optional[SensorDeviceClass] = None
+    _attr_state_class: Optional[SensorStateClass] = None
+    _attr_native_unit_of_measurement: Optional[str] = None
     _attr_entity_category: Optional[EntityCategory] = None
 
     @property
@@ -321,7 +330,6 @@ class NumberSelector:
 
 class DeviceEntryType(str, enum.Enum):
     SERVICE = "service"
-
 
 
 @dataclass
@@ -391,7 +399,6 @@ class MockStore:
         MockStore._storage_data.pop(self.key, None)
 
 
-
 class MockDtUtil:
     @staticmethod
     def now(tz: Any = None) -> datetime:
@@ -442,11 +449,17 @@ def register_mock_modules():
     config_entries.ConfigEntry = MockConfigEntry
     config_entries.ConfigFlow = MockConfigFlow
     config_entries.OptionsFlow = MockOptionsFlow
+    config_entries.ConfigFlowResult = dict
     ha.config_entries = config_entries
 
     # homeassistant.data_entry_flow
     data_entry_flow = types.ModuleType("homeassistant.data_entry_flow")
     data_entry_flow.FlowResult = dict
+    data_entry_flow.FlowResultType = type(
+        "FlowResultType",
+        (),
+        {"FORM": "form", "CREATE_ENTRY": "create_entry", "ABORT": "abort"},
+    )
     ha.data_entry_flow = data_entry_flow
 
     # homeassistant.components
@@ -468,13 +481,16 @@ def register_mock_modules():
     # homeassistant.const
     const = types.ModuleType("homeassistant.const")
     const.EntityCategory = EntityCategory
-    const.Platform = enum.Enum("Platform", {"CALENDAR": "calendar", "TODO": "todo", "SENSOR": "sensor"})
+    const.Platform = enum.Enum(
+        "Platform", {"CALENDAR": "calendar", "TODO": "todo", "SENSOR": "sensor"}
+    )
     ha.const = const
 
     # homeassistant.components.sensor
     sensor = types.ModuleType("homeassistant.components.sensor")
     sensor.SensorEntity = SensorEntity
     sensor.SensorDeviceClass = SensorDeviceClass
+    sensor.SensorStateClass = SensorStateClass
     components.sensor = sensor
 
     # homeassistant.components.http
@@ -550,4 +566,3 @@ def register_mock_modules():
 
 
 register_mock_modules()
-

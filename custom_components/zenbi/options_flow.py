@@ -32,9 +32,7 @@ class ZenbiOptionsFlowHandler(config_entries.OptionsFlow):
         """Return the config entry."""
         return self._config_entry
 
-    async def async_step_init(
-        self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
+    async def async_step_init(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
         """Manage the options."""
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
@@ -63,4 +61,3 @@ class ZenbiOptionsFlowHandler(config_entries.OptionsFlow):
         )
 
         return self.async_show_form(step_id="init", data_schema=schema)
-

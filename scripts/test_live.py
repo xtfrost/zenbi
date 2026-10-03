@@ -105,7 +105,9 @@ def _format_weekly_plan_text(schedules: list, entry_id: str = "entry_id") -> str
                     if key not in seen_keys:
                         seen_keys.add(key)
                         if f_id:
-                            file_links.append(f'<a href="/api/zenbi/file/{entry_id}/{f_id}" target="_blank" download>{name}</a>')
+                            file_links.append(
+                                f'<a href="/api/zenbi/file/{entry_id}/{f_id}" target="_blank" download>{name}</a>'
+                            )
                         else:
                             file_links.append(name)
 
@@ -319,7 +321,9 @@ async def test_zenbi(
             print("  [+] Active cached token found! Reusing existing session.")
             print(f"  [+] Device ID     : {client.unique_device_id}")
             print(f"  [+] Token preview : {client.token[:25]}...")
-            print("  [+] SKIPPED login request to /account/authenticate (ZERO security emails triggered!)")
+            print(
+                "  [+] SKIPPED login request to /account/authenticate (ZERO security emails triggered!)"
+            )
         else:
             print("  [*] Authenticating against Zenbi with persistent device ID...")
             auth = await client.authenticate()
@@ -365,7 +369,7 @@ async def test_zenbi(
             print(f"      [{idx}] For item {hw.calendar_item_id} (Date: {hw.date}):")
             print(f"          Description: {hw.description}")
             if hw.files:
-                f_names = [f.get('name') or f.get('title') for f in hw.files if isinstance(f, dict)]
+                f_names = [f.get("name") or f.get("title") for f in hw.files if isinstance(f, dict)]
                 print(f"          Files: {', '.join(filter(None, f_names))}")
 
         # Link homework to calendar items for display
@@ -378,28 +382,18 @@ async def test_zenbi(
             hw_tag = f" [HAS {len(item.homework)} HOMEWORK]" if item.homework else ""
             print(f"      [{idx}] {item.start} - {item.end}: {item.title}{hw_tag}")
             if item.resources:
-                res_names = [
-                    r.get("name", "")
-                    for r in item.resources
-                    if isinstance(r, dict)
-                ]
+                res_names = [r.get("name", "") for r in item.resources if isinstance(r, dict)]
                 print(f"          Location/Resources: {', '.join(filter(None, res_names))}")
             if item.note:
                 print(f"          Note: {item.note}")
             if item.substitutes:
-                sub_names = [
-                    s.get("name", "")
-                    for s in item.substitutes
-                    if isinstance(s, dict)
-                ]
+                sub_names = [s.get("name", "") for s in item.substitutes if isinstance(s, dict)]
                 print(f"          Substitutes: {', '.join(filter(None, sub_names))}")
             if item.homework:
                 for h in item.homework:
                     print(f"          -> Homework: {h.description}")
             if item.planning:
-                print(
-                    f"          Planning: color={item.planning.color}, icon={item.planning.icon}"
-                )
+                print(f"          Planning: color={item.planning.color}, icon={item.planning.icon}")
 
         # 5. Weekly Messages / Ugeplaner
         print(
@@ -416,10 +410,14 @@ async def test_zenbi(
                 preview_text = " | ".join(preview_lines)
                 print(f"          Preview: {preview_text[:120]}...")
             if ws.files:
-                f_names = [f.get('name') or f.get('title') for f in ws.files if isinstance(f, dict)]
+                f_names = [f.get("name") or f.get("title") for f in ws.files if isinstance(f, dict)]
                 print(f"          Attachments: {', '.join(filter(None, f_names))}")
                 first_file = next(
-                    (f for f in ws.files if isinstance(f, dict) and (f.get("id") or f.get("fileId"))),
+                    (
+                        f
+                        for f in ws.files
+                        if isinstance(f, dict) and (f.get("id") or f.get("fileId"))
+                    ),
                     None,
                 )
                 if first_file and idx == 1:
@@ -454,7 +452,9 @@ async def test_zenbi(
 
         if not students:
             print("\n  [!] No students explicitly tagged in timetable participant models.")
-            print("      Home Assistant will provision generic entities (no username in names/IDs).")
+            print(
+                "      Home Assistant will provision generic entities (no username in names/IDs)."
+            )
 
             print("\n" + "-" * 60)
             print("DEVICE: Zenbi")
@@ -470,7 +470,9 @@ async def test_zenbi(
             for c_idx, c_item in enumerate(items[:5], start=1):
                 hw_count = len(c_item.homework) if c_item.homework else 0
                 hw_note = f" [has {hw_count} homework]" if hw_count else ""
-                print(f"      - {c_item.start[:16]} to {c_item.end[11:16]} : {c_item.title}{hw_note}")
+                print(
+                    f"      - {c_item.start[:16]} to {c_item.end[11:16]} : {c_item.title}{hw_note}"
+                )
             if len(items) > 5:
                 print(f"      ... and {len(items) - 5} more classes")
 
@@ -490,7 +492,9 @@ async def test_zenbi(
                     for dl in desc_lines:
                         print(f"          {dl}")
                 if hw.files:
-                    f_names = [f.get('name') or f.get('title') for f in hw.files if isinstance(f, dict)]
+                    f_names = [
+                        f.get("name") or f.get("title") for f in hw.files if isinstance(f, dict)
+                    ]
                     print(f"          Files: {', '.join(filter(None, f_names))}")
 
             # 3. Weekly Plan Sensor
@@ -526,7 +530,7 @@ async def test_zenbi(
                 print("\n" + "-" * 60)
                 print(f"DEVICE: Zenbi ({student})")
                 print(f"  Identifier : ('zenbi', 'entry_id_{slug}')")
-                print(f"  Role       : Student Device")
+                print("  Role       : Student Device")
                 print("-" * 60)
 
                 # 1. Schedule Calendar
@@ -538,7 +542,9 @@ async def test_zenbi(
                 for c_idx, c_item in enumerate(student_items[:5], start=1):
                     hw_count = len(c_item.homework) if c_item.homework else 0
                     hw_note = f" [has {hw_count} homework]" if hw_count else ""
-                    print(f"      - {c_item.start[:16]} to {c_item.end[11:16]} : {c_item.title}{hw_note}")
+                    print(
+                        f"      - {c_item.start[:16]} to {c_item.end[11:16]} : {c_item.title}{hw_note}"
+                    )
                 if len(student_items) > 5:
                     print(f"      ... and {len(student_items) - 5} more classes")
 
@@ -563,7 +569,9 @@ async def test_zenbi(
                         for dl in desc_lines:
                             print(f"          {dl}")
                     if hw.files:
-                        f_names = [f.get('name') or f.get('title') for f in hw.files if isinstance(f, dict)]
+                        f_names = [
+                            f.get("name") or f.get("title") for f in hw.files if isinstance(f, dict)
+                        ]
                         print(f"          Files: {', '.join(filter(None, f_names))}")
 
                 # 3. Weekly Plan Sensor
@@ -601,10 +609,12 @@ async def test_zenbi(
             # 3. Unassigned classes (if any)
             unassigned_items = [it for it in items if not it.student_names]
             if unassigned_items:
-                print(f"\n  * ENTITY: calendar.zenbi_school_schedule")
+                print("\n  * ENTITY: calendar.zenbi_school_schedule")
                 print("    Name         : School Schedule (Fællesskema)")
                 print("    Unique ID    : entry_id_school_schedule")
-                print(f"    Classes      : {len(unassigned_items)} unassigned / school-wide class(es)")
+                print(
+                    f"    Classes      : {len(unassigned_items)} unassigned / school-wide class(es)"
+                )
 
         print("\n" + "=" * 60)
         print("ALL CHECKS PASSED: Your Zenbi credentials and API endpoints are working!")
@@ -657,7 +667,9 @@ def main():
                     u_cached = json.load(f).get("username")
                     if u_cached:
                         username = u_cached
-                        cached_device_id, cached_token, cached_expiry = load_cached_session(username)
+                        cached_device_id, cached_token, cached_expiry = load_cached_session(
+                            username
+                        )
             except Exception:
                 pass
         if not username:

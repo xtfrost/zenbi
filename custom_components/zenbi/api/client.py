@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 from datetime import datetime, timezone
 import json
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import uuid
+from zoneinfo import ZoneInfo
 
 import aiohttp
 
@@ -36,6 +38,8 @@ from .models import (
 
 _LOGGER = logging.getLogger(__name__)
 
+_COPENHAGEN_TZ = ZoneInfo("Europe/Copenhagen")
+
 
 def generate_stable_device_id(username: str) -> str:
     """Generate a deterministic UUID from username so Zenbi recognizes the device across runs."""
@@ -60,13 +64,9 @@ def _decode_jwt_exp(token: str) -> Optional[float]:
     return None
 
 
-def get_copenhagen_tz() -> Any:
-    """Get Europe/Copenhagen timezone, with fallback."""
-    try:
-        from zoneinfo import ZoneInfo
-        return ZoneInfo("Europe/Copenhagen")
-    except Exception:
-        return datetime.now().astimezone().tzinfo or timezone.utc
+def get_copenhagen_tz() -> ZoneInfo:
+    """Get Europe/Copenhagen timezone."""
+    return _COPENHAGEN_TZ
 
 
 def format_zenbi_datetime(dt: datetime) -> str:
@@ -104,10 +104,13 @@ class ZenbiApiClient:
         self._owns_session = session is None
 
         self._token: Optional[str] = token
-        self._token_expiry: Optional[float] = token_expiry or (_decode_jwt_exp(token) if token else None)
+        self._token_expiry: Optional[float] = token_expiry or (
+            _decode_jwt_exp(token) if token else None
+        )
         self._timeframe_id: Optional[str] = None
         self._user_id: Optional[str] = None
         self._sas_url_cache: Dict[str, Tuple[str, float]] = {}
+        self._auth_lock = asyncio.Lock()
 
     @property
     def token(self) -> Optional[str]:
@@ -129,13 +132,17 @@ class ZenbiApiClient:
         """Return the authenticated user ID."""
         return self._user_id
 
+    @property
+    def session(self) -> aiohttp.ClientSession:
+        """Return the active ClientSession."""
+        return self._get_session()
+
     def _get_session(self) -> aiohttp.ClientSession:
         """Get active ClientSession, creating one if owned and closed."""
         if self._session is None or self._session.closed:
             if not self._owns_session:
                 _LOGGER.warning(
-                    "Shared aiohttp session was closed unexpectedly. "
-                    "Creating a new owned session."
+                    "Shared aiohttp session was closed unexpectedly. Creating a new owned session."
                 )
             self._session = aiohttp.ClientSession()
             self._owns_session = True
@@ -149,52 +156,72 @@ class ZenbiApiClient:
 
     async def authenticate(self) -> ZenbiAuthResponse:
         """Authenticate with Zenbi API and retrieve JWT token."""
-        url = f"{self.base_url}{ENDPOINT_AUTHENTICATE}"
-        payload = {
-            "username": self.username,
-            "password": self.password,
-            "twoFactorType": TWO_FACTOR_NULL_GUID,
-            "uniqueDeviceId": self.unique_device_id,
-        }
-        headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "User-Agent": self.user_agent,
-        }
+        async with self._auth_lock:
+            # Recheck token under lock to avoid racing refreshes
+            if not self.is_token_expired():
+                return ZenbiAuthResponse(
+                    user_id=self._user_id or "",
+                    token=self._token or "",
+                )
 
-        session = self._get_session()
-        try:
-            async with session.post(url, json=payload, headers=headers) as response:
-                if response.status in (401, 403):
-                    error_text = await response.text()
-                    _LOGGER.warning("Authentication failed (HTTP %s): %s", response.status, error_text)
-                    raise ZenbiAuthError(f"Invalid credentials or access denied: HTTP {response.status}")
+            url = f"{self.base_url}{ENDPOINT_AUTHENTICATE}"
+            payload = {
+                "username": self.username,
+                "password": self.password,
+                "twoFactorType": TWO_FACTOR_NULL_GUID,
+                "uniqueDeviceId": self.unique_device_id,
+            }
+            headers = {
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "User-Agent": self.user_agent,
+            }
 
-                if response.status != 200:
-                    error_text = await response.text()
-                    _LOGGER.error("Auth request failed (HTTP %s): %s", response.status, error_text)
-                    raise ZenbiApiError(f"Authentication failed with status {response.status}: {error_text}")
+            session = self._get_session()
+            try:
+                async with session.post(url, json=payload, headers=headers) as response:
+                    if response.status in (401, 403):
+                        error_text = await response.text()
+                        _LOGGER.warning(
+                            "Authentication failed (HTTP %s): %s",
+                            response.status,
+                            error_text,
+                        )
+                        raise ZenbiAuthError(
+                            f"Invalid credentials or access denied: HTTP {response.status}"
+                        )
 
-                data = await response.json()
-        except aiohttp.ClientError as err:
-            _LOGGER.error("Connection error during authentication: %s", err)
-            raise ZenbiConnectionError(f"Failed to connect to Zenbi API: {err}") from err
+                    if response.status != 200:
+                        error_text = await response.text()
+                        _LOGGER.error(
+                            "Auth request failed (HTTP %s): %s",
+                            response.status,
+                            error_text,
+                        )
+                        raise ZenbiApiError(
+                            f"Authentication failed with status {response.status}: {error_text}"
+                        )
 
-        auth_response = ZenbiAuthResponse.from_dict(data)
-        if not auth_response.token:
-            raise ZenbiAuthError("Response did not contain an authentication token")
+                    data = await response.json()
+            except aiohttp.ClientError as err:
+                _LOGGER.error("Connection error during authentication: %s", err)
+                raise ZenbiConnectionError(f"Failed to connect to Zenbi API: {err}") from err
 
-        self._token = auth_response.token
-        self._user_id = auth_response.user_id
-        self._token_expiry = _decode_jwt_exp(self._token)
-        _LOGGER.debug(
-            "Authenticated successfully for user %s (expiry: %s)",
-            self._user_id,
-            datetime.fromtimestamp(self._token_expiry, tz=timezone.utc).isoformat()
-            if self._token_expiry
-            else "unknown",
-        )
-        return auth_response
+            auth_response = ZenbiAuthResponse.from_dict(data)
+            if not auth_response.token:
+                raise ZenbiAuthError("Response did not contain an authentication token")
+
+            self._token = auth_response.token
+            self._user_id = auth_response.user_id
+            self._token_expiry = _decode_jwt_exp(self._token)
+            _LOGGER.debug(
+                "Authenticated successfully for user %s (expiry: %s)",
+                self._user_id,
+                datetime.fromtimestamp(self._token_expiry, tz=timezone.utc).isoformat()
+                if self._token_expiry
+                else "unknown",
+            )
+            return auth_response
 
     async def _request(
         self,
@@ -228,6 +255,8 @@ class ZenbiApiClient:
             ) as response:
                 if response.status == 401 and retry_on_401:
                     _LOGGER.info("Token expired during request (HTTP 401), re-authenticating...")
+                    self._token = None
+                    self._token_expiry = None
                     await self.authenticate()
                     return await self._request(
                         method=method,
@@ -242,7 +271,9 @@ class ZenbiApiClient:
 
                 if response.status not in (200, 201, 204):
                     text = await response.text()
-                    raise ZenbiApiError(f"API request to {endpoint} returned status {response.status}: {text}")
+                    raise ZenbiApiError(
+                        f"API request to {endpoint} returned status {response.status}: {text}"
+                    )
 
                 if response.status == 204:
                     return None
@@ -316,9 +347,7 @@ class ZenbiApiClient:
                     labels_raw = data[key]
                     break
 
-        type_map = {
-            lt.get("id"): lt for lt in label_types if isinstance(lt, dict) and "id" in lt
-        }
+        type_map = {lt.get("id"): lt for lt in label_types if isinstance(lt, dict) and "id" in lt}
 
         parsed_labels: List[ZenbiPlanningLabel] = []
         for lbl in labels_raw:
@@ -330,15 +359,17 @@ class ZenbiApiClient:
                 type_info = type_map[lt_id]
                 if not lbl_copy.get("color") and type_info.get("color"):
                     lbl_copy["color"] = type_info["color"]
-                if not lbl_copy.get("description") and type_info.get("title") and type_info.get("title") != lbl_copy.get("title"):
+                if (
+                    not lbl_copy.get("description")
+                    and type_info.get("title")
+                    and type_info.get("title") != lbl_copy.get("title")
+                ):
                     lbl_copy["description"] = type_info["title"]
             parsed_labels.append(ZenbiPlanningLabel.from_dict(lbl_copy))
 
         return parsed_labels
 
-    async def get_homework(
-        self, start_dt: datetime, end_dt: datetime
-    ) -> List[ZenbiHomework]:
+    async def get_homework(self, start_dt: datetime, end_dt: datetime) -> List[ZenbiHomework]:
         """Fetch homework items for a given date range."""
         params = {
             "start": format_zenbi_datetime(start_dt),
@@ -413,4 +444,3 @@ class ZenbiApiClient:
         self._sas_url_cache.clear()
         if self._owns_session and self._session and not self._session.closed:
             await self._session.close()
-

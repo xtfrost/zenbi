@@ -18,11 +18,9 @@ class ZenbiFileDownloadView(HomeAssistantView):
 
     url = "/api/zenbi/file/{entry_id}/{file_id}"
     name = "api:zenbi:file"
-    requires_auth = False
+    requires_auth = True
 
-    async def get(
-        self, request: web.Request, entry_id: str, file_id: str
-    ) -> web.StreamResponse:
+    async def get(self, request: web.Request, entry_id: str, file_id: str) -> web.StreamResponse:
         """Handle download request and stream content with Content-Disposition: inline."""
         hass: HomeAssistant = request.app["hass"]
         coordinator = hass.data.get(DOMAIN, {}).get(entry_id)
@@ -30,9 +28,7 @@ class ZenbiFileDownloadView(HomeAssistantView):
             return web.Response(status=404, text="Zenbi integration entry not found")
 
         try:
-            download_url = (
-                await coordinator.client.get_weekly_schedule_file_download_url(file_id)
-            )
+            download_url = await coordinator.client.get_weekly_schedule_file_download_url(file_id)
         except Exception as err:
             _LOGGER.error(
                 "Failed to retrieve file download URL for file %s (entry %s): %s",
@@ -43,7 +39,7 @@ class ZenbiFileDownloadView(HomeAssistantView):
             return web.Response(status=502, text="Failed to retrieve file from Zenbi")
 
         try:
-            session = coordinator.client._get_session()
+            session = coordinator.client.session
             async with session.get(download_url) as upstream_resp:
                 if upstream_resp.status != 200:
                     _LOGGER.warning(
@@ -56,9 +52,7 @@ class ZenbiFileDownloadView(HomeAssistantView):
                         text="Failed to fetch file from storage",
                     )
 
-                content_type = upstream_resp.headers.get(
-                    "Content-Type", "application/octet-stream"
-                )
+                content_type = upstream_resp.headers.get("Content-Type", "application/octet-stream")
                 headers = {
                     "Content-Type": content_type,
                     "Content-Disposition": "inline",
@@ -78,4 +72,3 @@ class ZenbiFileDownloadView(HomeAssistantView):
                 err,
             )
             return web.Response(status=502, text="Failed to stream file from storage")
-

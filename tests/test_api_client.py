@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 from datetime import datetime, timezone
 import json
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import aiohttp
 import pytest
@@ -22,12 +23,9 @@ from custom_components.zenbi.api.exceptions import (
     ZenbiConnectionError,
 )
 from custom_components.zenbi.api.models import (
-    ZenbiAuthResponse,
     ZenbiCalendarItem,
     ZenbiGlobalData,
-    ZenbiHomework,
     ZenbiPlanningLabel,
-    ZenbiPlanningMeta,
     ZenbiWeeklySchedule,
     extract_student_names,
     parse_quill_delta,
@@ -248,9 +246,7 @@ async def test_request_auto_reauth_on_401():
     # 2. Auth call returns 200
     resp_auth = AsyncMock()
     resp_auth.status = 200
-    resp_auth.json = AsyncMock(
-        return_value={"userId": "uid", "token": new_token}
-    )
+    resp_auth.json = AsyncMock(return_value={"userId": "uid", "token": new_token})
     mock_session.post.return_value.__aenter__.return_value = resp_auth
 
     # 3. Second request returns 200
@@ -399,7 +395,7 @@ async def test_get_weekly_schedules():
             "start": "2026-09-07T00:00:00+02:00",
             "end": "2026-09-14T00:00:00+02:00",
             "files": [{"id": "f2", "name": "Fritter-kalender-uge-37.png"}],
-        }
+        },
     ]
 
     mock_session = MagicMock(spec=aiohttp.ClientSession)
@@ -450,30 +446,34 @@ def test_generate_stable_device_id():
 def test_danish_and_list_quill_delta_parsing():
     """Test Quill Delta parsing with Danish characters, bullet lists, and HTML entities."""
     # 1. Danish characters preserved losslessly
-    danish_delta = json.dumps({
-        "ops": [
-            {"insert": "Kære forældre i Århus med æbler, pærer og øl.\n"},
-            {"insert": "Husk tøj til sne og blæst!\n"}
-        ]
-    })
+    danish_delta = json.dumps(
+        {
+            "ops": [
+                {"insert": "Kære forældre i Århus med æbler, pærer og øl.\n"},
+                {"insert": "Husk tøj til sne og blæst!\n"},
+            ]
+        }
+    )
     parsed = parse_quill_delta(danish_delta)
     assert "Kære forældre i Århus med æbler, pærer og øl." in parsed
     assert "Husk tøj til sne og blæst!" in parsed
 
     # 2. Bullet list with bold and HTML entity
-    bullet_delta = json.dumps({
-        "ops": [
-            {"insert": "Pakkeliste &amp; info:"},
-            {"insert": "\n", "attributes": {"header": 2}},
-            {"insert": "Madpakke"},
-            {"insert": "\n", "attributes": {"list": "bullet"}},
-            {"insert": "Drikkedunk "},
-            {"attributes": {"bold": True}, "insert": "med vand"},
-            {"insert": "\n", "attributes": {"list": "bullet"}},
-            {"insert": "Gummistøvler"},
-            {"insert": "\n", "attributes": {"list": "bullet"}}
-        ]
-    })
+    bullet_delta = json.dumps(
+        {
+            "ops": [
+                {"insert": "Pakkeliste &amp; info:"},
+                {"insert": "\n", "attributes": {"header": 2}},
+                {"insert": "Madpakke"},
+                {"insert": "\n", "attributes": {"list": "bullet"}},
+                {"insert": "Drikkedunk "},
+                {"attributes": {"bold": True}, "insert": "med vand"},
+                {"insert": "\n", "attributes": {"list": "bullet"}},
+                {"insert": "Gummistøvler"},
+                {"insert": "\n", "attributes": {"list": "bullet"}},
+            ]
+        }
+    )
     parsed_bullets = parse_quill_delta(bullet_delta)
     assert "## Pakkeliste & info:" in parsed_bullets
     assert "- Madpakke" in parsed_bullets
@@ -675,7 +675,9 @@ def test_global_data_active_timeframe_resolution():
     assert gd.timeframe_id == "tf-active"
 
     # Direct timeframeId precedence
-    direct_gd = ZenbiGlobalData.from_dict({"timeframeId": "tf-direct", "timeframes": [{"id": "tf-other"}]})
+    direct_gd = ZenbiGlobalData.from_dict(
+        {"timeframeId": "tf-direct", "timeframes": [{"id": "tf-other"}]}
+    )
     assert direct_gd.timeframe_id == "tf-direct"
 
 
@@ -720,5 +722,57 @@ async def test_planning_labels_with_label_types_enrichment():
     assert labels[0].description == "Ferie"
 
 
+def test_client_init_and_session_property():
+    """Test ZenbiApiClient instantiates cleanly and exposes session property."""
+    mock_session = MagicMock(spec=aiohttp.ClientSession)
+    mock_session.closed = False
+    client = ZenbiApiClient(username="testuser", password="secretpassword", session=mock_session)
+    assert client.username == "testuser"
+    assert client.session is mock_session
 
 
+@pytest.mark.asyncio
+async def test_client_authenticate_concurrency_lock():
+    """Test concurrent authenticate calls are serialized and make a single upstream call."""
+    mock_session = MagicMock(spec=aiohttp.ClientSession)
+    mock_session.closed = False
+
+    future_exp = int(time.time()) + 3600
+    mock_token = _create_mock_jwt(future_exp)
+
+    mock_resp = AsyncMock()
+    mock_resp.status = 200
+    mock_resp.json = AsyncMock(return_value={"userId": "u1", "token": mock_token})
+
+    async def delayed_post(*args, **kwargs):
+        await asyncio.sleep(0.01)
+        return mock_resp
+
+    mock_session.post.return_value.__aenter__.side_effect = delayed_post
+
+    client = ZenbiApiClient(username="user", password="pwd", session=mock_session)
+
+    res1, res2 = await asyncio.gather(
+        client.authenticate(),
+        client.authenticate(),
+    )
+    assert res1.token == mock_token
+    assert res2.token == mock_token
+    # Upstream HTTP post should only have been called once thanks to lock and is_token_expired check
+    assert mock_session.post.call_count == 1
+
+
+def test_planning_label_stable_uuid5_id():
+    """Test ZenbiPlanningLabel generates deterministic UUID5 without id or guid."""
+    payload1 = {
+        "title": "Idrætsdag",
+        "date": "2026-09-18",
+    }
+    payload2 = {
+        "title": "Idrætsdag",
+        "date": "2026-09-18",
+    }
+    lbl1 = ZenbiPlanningLabel.from_dict(payload1)
+    lbl2 = ZenbiPlanningLabel.from_dict(payload2)
+    assert lbl1.id == lbl2.id
+    assert lbl1.id.count("-") == 4  # Valid UUID format string

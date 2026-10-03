@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -17,7 +17,6 @@ from homeassistant.util import dt as dt_util
 from .api.models import strip_markdown
 from .const import DOMAIN, slugify_name
 from .coordinator import (
-    ZenbiCalendarData,
     ZenbiCalendarDataUpdateCoordinator,
     ZenbiCalendarItem,
 )
@@ -42,20 +41,14 @@ async def async_setup_entry(
 
     if students:
         for student in students:
-            entities.append(
-                ZenbiScheduleCalendarEntity(coordinator, entry, student_name=student)
-            )
+            entities.append(ZenbiScheduleCalendarEntity(coordinator, entry, student_name=student))
         # If unassigned schedule items exist, expose a general school schedule
         unassigned = coordinator.get_student_calendar_items(None)
         if unassigned:
-            entities.append(
-                ZenbiScheduleCalendarEntity(coordinator, entry, student_name=None)
-            )
+            entities.append(ZenbiScheduleCalendarEntity(coordinator, entry, student_name=None))
     else:
         # Fallback if no students discovered
-        entities.append(
-            ZenbiScheduleCalendarEntity(coordinator, entry, student_name=None)
-        )
+        entities.append(ZenbiScheduleCalendarEntity(coordinator, entry, student_name=None))
 
     # School-wide planning calendar and weekly messages archive
     entities.append(ZenbiPlanningCalendarEntity(coordinator, entry))
@@ -205,9 +198,9 @@ class ZenbiScheduleCalendarEntity(ZenbiBaseCalendarEntity):
 
         # Sort by start time
         upcoming_events.sort(
-            key=lambda e: e.start
-            if isinstance(e.start, datetime)
-            else dt_util.start_of_local_day(e.start)
+            key=lambda e: (
+                e.start if isinstance(e.start, datetime) else dt_util.start_of_local_day(e.start)
+            )
         )
         return upcoming_events[0]
 
@@ -275,7 +268,9 @@ class ZenbiScheduleCalendarEntity(ZenbiBaseCalendarEntity):
                             if isinstance(f, dict):
                                 file_names.append(format_attachment_display_name(f))
                         if file_names:
-                            section.append("Vedhæftede filer:\n" + "\n".join(f"- {fn}" for fn in file_names))
+                            section.append(
+                                "Vedhæftede filer:\n" + "\n".join(f"- {fn}" for fn in file_names)
+                            )
 
                     if section:
                         hw_sections.append("\n\n".join(section))
@@ -292,7 +287,11 @@ class ZenbiScheduleCalendarEntity(ZenbiBaseCalendarEntity):
                 uid=str(item.id),
             )
         except Exception as err:
-            _LOGGER.warning("Error parsing calendar item %s: %s", getattr(item, "id", "unknown"), err)
+            _LOGGER.warning(
+                "Error parsing calendar item %s: %s",
+                getattr(item, "id", "unknown"),
+                err,
+            )
             return None
 
     @property
@@ -373,13 +372,19 @@ class ZenbiScheduleCalendarEntity(ZenbiBaseCalendarEntity):
                     class_entry["homework"] = [
                         {
                             "id": hw.id,
-                            "description": strip_markdown(hw.description) if hw.description else None,
-                            "date": _format_date_clean(hw.date) if getattr(hw, "date", None) else None,
+                            "description": strip_markdown(hw.description)
+                            if hw.description
+                            else None,
+                            "date": _format_date_clean(hw.date)
+                            if getattr(hw, "date", None)
+                            else None,
                             "files": [
                                 format_attachment_display_name(f)
                                 for f in hw.files
                                 if isinstance(f, dict)
-                            ] if hw.files else [],
+                            ]
+                            if hw.files
+                            else [],
                         }
                         for hw in item.homework
                     ]
@@ -513,7 +518,11 @@ class ZenbiPlanningCalendarEntity(ZenbiBaseCalendarEntity):
                 uid=str(label.id),
             )
         except Exception as err:
-            _LOGGER.warning("Error parsing planning label %s: %s", getattr(label, "id", "unknown"), err)
+            _LOGGER.warning(
+                "Error parsing planning label %s: %s",
+                getattr(label, "id", "unknown"),
+                err,
+            )
             return None
 
     def _get_calendar_events(self) -> List[CalendarEvent]:
@@ -574,9 +583,7 @@ class ZenbiPlanningCalendarEntity(ZenbiBaseCalendarEntity):
         if not upcoming:
             return None
 
-        upcoming.sort(
-            key=lambda e: e.start if isinstance(e.start, date) else e.start.date()
-        )
+        upcoming.sort(key=lambda e: e.start if isinstance(e.start, date) else e.start.date())
         return upcoming[0]
 
     async def async_get_events(
@@ -636,9 +643,7 @@ class ZenbiWeeklyMessagesCalendarEntity(ZenbiBaseCalendarEntity):
                 return self._schedule_to_calendar_event(self.coordinator.data.weekly_schedules[-1])
             return None
 
-        upcoming.sort(
-            key=lambda e: e.start if isinstance(e.start, date) else e.start.date()
-        )
+        upcoming.sort(key=lambda e: e.start if isinstance(e.start, date) else e.start.date())
         return upcoming[0]
 
     def _schedule_to_calendar_event(self, schedule: Any) -> Optional[CalendarEvent]:
@@ -675,7 +680,9 @@ class ZenbiWeeklyMessagesCalendarEntity(ZenbiBaseCalendarEntity):
                     if isinstance(f, dict):
                         file_names.append(format_attachment_display_name(f))
                 if file_names:
-                    desc_parts.append(f"Vedhæftede filer:\n" + "\n".join(f"- {fn}" for fn in file_names))
+                    desc_parts.append(
+                        "Vedhæftede filer:\n" + "\n".join(f"- {fn}" for fn in file_names)
+                    )
 
             return CalendarEvent(
                 start=start_date,
@@ -685,7 +692,11 @@ class ZenbiWeeklyMessagesCalendarEntity(ZenbiBaseCalendarEntity):
                 uid=str(schedule.id),
             )
         except Exception as err:
-            _LOGGER.warning("Error parsing weekly schedule %s: %s", getattr(schedule, "id", "unknown"), err)
+            _LOGGER.warning(
+                "Error parsing weekly schedule %s: %s",
+                getattr(schedule, "id", "unknown"),
+                err,
+            )
             return None
 
     @property
