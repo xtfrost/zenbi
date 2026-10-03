@@ -530,7 +530,7 @@ Addressed 24 issues identified across the codebase:
   - 19-B-9: `sensor.py` — Added `SensorStateClass.MEASUREMENT` and unit to weekly plan sensors.
 - [x] **Ticket 19-C: CI/CD & Low-Priority Polish**
   - 19-C-1: Created `.github/workflows/lint.yaml` with Ruff lint and format checks.
-  - 19-C-2: Created `.github/workflows/release.yaml` for automated HACS GitHub releases on tag push.
+  - 19-C-2: Manual releases maintained (no automated release workflow needed).
   - 19-C-3: Updated `.github/workflows/tests.yaml` with pip caching and coverage report.
   - 19-C-4: Pinned action versions in `hacs.yaml`.
   - 19-C-5: `diagnostics.py` — Redacted `CONF_USERNAME` as PII.
