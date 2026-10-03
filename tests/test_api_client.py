@@ -720,5 +720,15 @@ async def test_planning_labels_with_label_types_enrichment():
     assert labels[0].description == "Ferie"
 
 
+def test_client_init_and_session_property():
+    """Test ZenbiApiClient instantiates cleanly and exposes session property."""
+    mock_session = MagicMock(spec=aiohttp.ClientSession)
+    mock_session.closed = False
+    client = ZenbiApiClient(username="testuser", password="secretpassword", session=mock_session)
+    assert client.username == "testuser"
+    assert client.session is mock_session
+
+
+
 
 

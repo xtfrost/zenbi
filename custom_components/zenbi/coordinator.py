@@ -299,20 +299,37 @@ class ZenbiCalendarDataUpdateCoordinator(DataUpdateCoordinator[ZenbiCalendarData
                     start_date.isoformat(),
                     end_date.isoformat(),
                 )
-                items = await self.client.get_calendar_items(start_date, end_date)
                 try:
-                    homeworks = await self.client.get_homework(start_date, end_date)
-                    hw_by_calendar_id: Dict[str, List[ZenbiHomework]] = {}
-                    for hw in homeworks:
-                        if hw.calendar_item_id:
-                            hw_by_calendar_id.setdefault(hw.calendar_item_id, []).append(hw)
-                    for item in items:
-                        if item.id in hw_by_calendar_id:
-                            item.homework = hw_by_calendar_id[item.id]
-                except Exception as err:
-                    _LOGGER.debug("Failed to fetch on-demand homework: %s", err)
+                    items = await self.client.get_calendar_items(start_date, end_date)
+                    try:
+                        homeworks = await self.client.get_homework(start_date, end_date)
+                        hw_by_calendar_id: Dict[str, List[ZenbiHomework]] = {}
+                        for hw in homeworks:
+                            if hw.calendar_item_id:
+                                hw_by_calendar_id.setdefault(hw.calendar_item_id, []).append(hw)
+                        for item in items:
+                            if item.id in hw_by_calendar_id:
+                                item.homework = hw_by_calendar_id[item.id]
+                    except Exception as err:
+                        _LOGGER.debug("Failed to fetch on-demand homework: %s", err)
 
-                self._on_demand_cache[cache_key] = (now_ts, items)
+                    self._on_demand_cache[cache_key] = (now_ts, items)
+                except (ZenbiApiError, ZenbiConnectionError, ZenbiAuthError) as err:
+                    _LOGGER.warning(
+                        "On-demand calendar fetch failed (%s to %s): %s",
+                        start_date.isoformat(),
+                        end_date.isoformat(),
+                        err,
+                    )
+                    items = []
+                except Exception as err:
+                    _LOGGER.error(
+                        "Unexpected error during on-demand calendar fetch (%s to %s): %s",
+                        start_date.isoformat(),
+                        end_date.isoformat(),
+                        err,
+                    )
+                    items = []
 
         # Apply student filter if specified
         if student_name is not None:
@@ -348,4 +365,21 @@ class ZenbiCalendarDataUpdateCoordinator(DataUpdateCoordinator[ZenbiCalendarData
             start_date.isoformat(),
             end_date.isoformat(),
         )
-        return await self.client.get_weekly_schedules(start_date, end_date)
+        try:
+            return await self.client.get_weekly_schedules(start_date, end_date)
+        except (ZenbiApiError, ZenbiConnectionError, ZenbiAuthError) as err:
+            _LOGGER.warning(
+                "On-demand weekly schedule fetch failed (%s to %s): %s",
+                start_date.isoformat(),
+                end_date.isoformat(),
+                err,
+            )
+            return []
+        except Exception as err:
+            _LOGGER.error(
+                "Unexpected error during on-demand weekly schedule fetch (%s to %s): %s",
+                start_date.isoformat(),
+                end_date.isoformat(),
+                err,
+            )
+            return []

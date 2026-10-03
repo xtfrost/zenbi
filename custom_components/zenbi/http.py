@@ -18,7 +18,7 @@ class ZenbiFileDownloadView(HomeAssistantView):
 
     url = "/api/zenbi/file/{entry_id}/{file_id}"
     name = "api:zenbi:file"
-    requires_auth = False
+    requires_auth = True
 
     async def get(
         self, request: web.Request, entry_id: str, file_id: str
@@ -43,7 +43,7 @@ class ZenbiFileDownloadView(HomeAssistantView):
             return web.Response(status=502, text="Failed to retrieve file from Zenbi")
 
         try:
-            session = coordinator.client._get_session()
+            session = coordinator.client.session
             async with session.get(download_url) as upstream_resp:
                 if upstream_resp.status != 200:
                     _LOGGER.warning(

@@ -1284,7 +1284,7 @@ async def test_zenbi_file_download_view(mock_hass, mock_config_entry, mock_clien
     mock_hass.data[DOMAIN] = {mock_config_entry.entry_id: coordinator}
 
     view = ZenbiFileDownloadView()
-    assert view.requires_auth is False
+    assert view.requires_auth is True
     assert view.url == "/api/zenbi/file/{entry_id}/{file_id}"
 
     mock_request = MagicMock()
@@ -1303,7 +1303,7 @@ async def test_zenbi_file_download_view(mock_hass, mock_config_entry, mock_clien
 
     mock_session = MagicMock()
     mock_session.get.return_value.__aenter__.return_value = mock_upstream_resp
-    mock_client._get_session.return_value = mock_session
+    mock_client.session = mock_session
 
     response = await view.get(mock_request, mock_config_entry.entry_id, "file-123")
     assert response.status == 200
@@ -1952,6 +1952,45 @@ async def test_calendar_planning_entity_consecutive_label_merging(mock_hass, moc
     query_end = datetime(2026, 10, 31, tzinfo=timezone.utc)
     fetched = await entity.async_get_events(mock_hass, query_start, query_end)
     assert len(fetched) == 2
+
+
+@pytest.mark.asyncio
+async def test_coordinator_on_demand_calendar_error_handling(mock_hass, mock_config_entry, mock_client):
+    """Test coordinator handles on-demand calendar fetch errors gracefully without crashing."""
+    coordinator = ZenbiCalendarDataUpdateCoordinator(mock_hass, mock_client, mock_config_entry)
+    coordinator.data = ZenbiCalendarData(
+        window_start=datetime(2026, 9, 21, 0, 0, tzinfo=timezone.utc),
+        window_end=datetime(2026, 10, 5, 0, 0, tzinfo=timezone.utc),
+    )
+
+    out_start = datetime(2026, 11, 1, 0, 0, tzinfo=timezone.utc)
+    out_end = datetime(2026, 11, 7, 23, 59, tzinfo=timezone.utc)
+
+    # API raises ConnectionError
+    mock_client.get_calendar_items = AsyncMock(side_effect=ZenbiConnectionError("Server unreachable"))
+
+    items = await coordinator.async_get_calendar_items(out_start, out_end)
+    assert items == []
+
+
+@pytest.mark.asyncio
+async def test_coordinator_on_demand_weekly_schedules_error_handling(mock_hass, mock_config_entry, mock_client):
+    """Test coordinator handles on-demand weekly schedules fetch errors gracefully without crashing."""
+    coordinator = ZenbiCalendarDataUpdateCoordinator(mock_hass, mock_client, mock_config_entry)
+    coordinator.data = ZenbiCalendarData(
+        window_start=datetime(2026, 9, 21, 0, 0, tzinfo=timezone.utc),
+        window_end=datetime(2026, 10, 5, 0, 0, tzinfo=timezone.utc),
+    )
+
+    out_start = datetime(2026, 11, 1, 0, 0, tzinfo=timezone.utc)
+    out_end = datetime(2026, 11, 7, 23, 59, tzinfo=timezone.utc)
+
+    # API raises ApiError
+    mock_client.get_weekly_schedules = AsyncMock(side_effect=ZenbiApiError("Bad request"))
+
+    items = await coordinator.async_get_weekly_schedules(out_start, out_end)
+    assert items == []
+
 
 
 

@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import json
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import uuid
 
 import aiohttp
@@ -128,6 +128,11 @@ class ZenbiApiClient:
     def user_id(self) -> Optional[str]:
         """Return the authenticated user ID."""
         return self._user_id
+
+    @property
+    def session(self) -> aiohttp.ClientSession:
+        """Return the active ClientSession."""
+        return self._get_session()
 
     def _get_session(self) -> aiohttp.ClientSession:
         """Get active ClientSession, creating one if owned and closed."""

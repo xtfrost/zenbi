@@ -480,20 +480,60 @@ flowchart TD
   - Added test for `ZenbiNextWeeklyPlanSensor` empty vs populated behavior.
   - Updated all integration tests to verify numeric message count state and `content` attribute (67/67 passing).---
 
-### Phase 18: Planning Calendar & Labels Timeframe Resolution (In Progress)
-- [ ] **Root Cause Identified**:
+### Phase 18: Planning Calendar & Labels Timeframe Resolution (Completed)
+- [x] **Root Cause Identified**:
   - The Zenbi backend returns multiple school year timeframes in `/globaldata` (`timeframes` array).
   - Index 0 was an obsolete/draft timeframe named `"Slettes"` with zero planning labels.
   - The fallback `data["timeframes"][0]` selected this empty timeframe instead of the active school year (`"2026/2027"` with start `2026-08-01` to end `2027-08-01`).
   - Active timeframe `"2026/2027"` contains 57 planning labels including all holiday periods (Efterårsferie, Juleferie, Vinterferie, Påskeferie, etc.).
-- [ ] **Timeframe Resolution Strategy (`models.py`)**:
+- [x] **Timeframe Resolution Strategy (`models.py`)**:
   - In `ZenbiGlobalData.from_dict`:
     - Rather than blindly taking `timeframes[0]`, select the timeframe encompassing current date (`start <= now <= end`).
     - Filter out timeframes with names matching "slet" / "slettes" or invalid spans.
-- [ ] **Label & Type Parsing (`models.py`, `client.py`)**:
+- [x] **Label & Type Parsing (`models.py`, `client.py`)**:
   - Parse `labelTypes` to extract label category titles and CSS colors.
   - Parse `date` field in `ZenbiPlanningLabel.from_dict` correctly into ISO date strings.
-- [ ] **Calendar Entity Improvements (`calendar.py`)**:
+- [x] **Calendar Entity Improvements (`calendar.py`)**:
   - Merge consecutive identical daily labels (e.g. Efterårsferie Mon-Wed and Thu-Fri) into single multi-day CalendarEvent ranges, creating clean multi-day calendar bars in Home Assistant.
-- [ ] **Automated Testing**:
-  - Unit tests in `test_api_client.py` and `test_integration.py` verifying active timeframe resolution and multi-day label events.
+- [x] **Automated Testing**:
+  - Unit tests in `test_api_client.py` and `test_integration.py` verifying active timeframe resolution and multi-day label events (70/70 passing).
+
+---
+
+### Phase 19: Code Quality, Robustness & CI Hardening (Planning / Approved)
+
+**Scope trigger:** Modifies 9+ source files, coordinator/API logic, entity patterns, GitHub workflows, and tests.
+**Status:** In Progress — executing Ticket 19-A first.
+
+#### 1. Objective
+Address 24 issues identified across the codebase:
+- Critical bug fixes: Missing imports (`timezone` in `calendar.py`, `Tuple` in `client.py`), insecure HTTP file proxy view, private method calls, and unguarded on-demand coordinator API calls.
+- Robustness & HA patterns: Concurrency lock for auth refresh, singleton timezone object, `async_shutdown` cleanup, modern config flow types, atomic store persistence, deduplicated date parsing, stable label IDs, and sensor measurement state classes.
+- CI/CD & Hygiene: Ruff lint workflow, release workflow, pip caching & coverage in tests, action pinning, PII redaction in diagnostics, and expanded test coverage.
+
+#### 2. Work Breakdown & Tickets
+- **Ticket 19-A: Critical Bug Fixes (Ship First)**
+  - 19-A-1: `calendar.py` — Add missing `timezone` import (`timezone.utc`).
+  - 19-A-2: `api/client.py` — Add missing `Tuple` import from `typing`.
+  - 19-A-3: `http.py` — Require auth (`requires_auth = True`) on file download proxy view.
+  - 19-A-4: `http.py` / `api/client.py` — Expose public `session` property on `ZenbiApiClient` instead of accessing `_get_session()`.
+  - 19-A-5: `coordinator.py` — Wrap on-demand `async_get_calendar_items` fetch in try/except to prevent calendar UI crashes.
+- **Ticket 19-B: Robustness & HA Best Practices**
+  - 19-B-1: `api/client.py` — Add `asyncio.Lock` around token refresh in `authenticate()` to prevent race conditions.
+  - 19-B-2: `api/client.py` — Hoist `_COPENHAGEN_TZ` to module constant and simplify `get_copenhagen_tz()`.
+  - 19-B-3: `coordinator.py` — Remove fragile `hasattr` check on `super().async_shutdown()`.
+  - 19-B-4: `config_flow.py` — Replace deprecated `FlowResult` with `ConfigFlowResult` / backward-compatible type.
+  - 19-B-5: `config_flow.py` — Clean up `async_step_reauth` context handling and add docstrings.
+  - 19-B-6: `todo.py` — Protect store read-modify-write with an `asyncio.Lock` to avoid multi-student race conditions.
+  - 19-B-7: `api/models.py` — Deduplicate `_parse_iso` helper function into module-level helper.
+  - 19-B-8: `api/models.py` — Replace non-deterministic `hash()` fallback ID with stable `uuid.uuid5` for planning labels.
+  - 19-B-9: `sensor.py` — Add `SensorStateClass.MEASUREMENT` and unit to weekly plan sensors.
+- **Ticket 19-C: CI/CD & Low-Priority Polish**
+  - 19-C-1: Create `.github/workflows/lint.yaml` with Ruff lint and format checks.
+  - 19-C-2: Create `.github/workflows/release.yaml` for automated HACS GitHub releases on tag push.
+  - 19-C-3: Update `.github/workflows/tests.yaml` with pip caching and coverage report.
+  - 19-C-4: Pin action versions in `hacs.yaml` and `hassfest.yaml`.
+  - 19-C-5: `diagnostics.py` — Redact `CONF_USERNAME` as PII.
+  - 19-C-6: Incrementally modernize type annotations.
+  - 19-C-7: Add new test scenarios covering all fixes in `tests/test_api_client.py` and `tests/test_integration.py`.
+
