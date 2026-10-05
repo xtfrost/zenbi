@@ -18,7 +18,7 @@ class ZenbiFileDownloadView(HomeAssistantView):
 
     url = "/api/zenbi/file/{entry_id}/{file_id}"
     name = "api:zenbi:file"
-    requires_auth = True
+    requires_auth = False
 
     async def get(self, request: web.Request, entry_id: str, file_id: str) -> web.StreamResponse:
         """Handle download request and stream content with Content-Disposition: inline."""

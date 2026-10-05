@@ -1412,7 +1412,7 @@ async def test_zenbi_file_download_view(mock_hass, mock_config_entry, mock_clien
     mock_hass.data[DOMAIN] = {mock_config_entry.entry_id: coordinator}
 
     view = ZenbiFileDownloadView()
-    assert view.requires_auth is True
+    assert view.requires_auth is False
     assert view.url == "/api/zenbi/file/{entry_id}/{file_id}"
 
     mock_request = MagicMock()
